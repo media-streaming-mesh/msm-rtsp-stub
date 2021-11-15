@@ -1,0 +1,11 @@
+[package]
+name = "msm-rtsp-stub"
+version = "0.0.1"
+authors = ["Giles Heron <giheron@cisco.com>"]
+description = "RTSP Sidecar Stub Proxy written in Rust"
+repository = "https://github.com/media-streaming-mesh/msm-rtsp-stub"
+readme = "README.md"
+keywords = ["RTSP"]
+license = "Apache 2.0"
+
+[dependencies]
