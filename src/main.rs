@@ -1,3 +1,4 @@
+
 use tokio::net::{TcpListener, TcpStream};
 use std::io::{Error, ErrorKind, Result};
 
@@ -13,13 +14,12 @@ async fn handle_read(stream: &TcpStream) -> Result<String> {
             Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
             Ok(_) => {
                 if buf[0] == 36 {
-                    println!("Dollar!");
-                    return Ok(String::from("Dollar\n"));
+                    println!("RTP Data");
+                    return Ok(String::from_utf8_lossy(&buf[1..]).to_string());
                 }
                 else {
-                    let request = String::from_utf8_lossy(&buf).to_string();
-                    println!("{}", request);
-                    return Ok(request);
+                    println!("RTSP Command");
+                    return Ok(String::from_utf8_lossy(&buf).to_string());
                 }
             },
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
