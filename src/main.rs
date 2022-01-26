@@ -59,6 +59,16 @@ async fn handle_write(stream: &TcpStream, response: String) -> Result<usize> {
 /// manage client connection from beginning to end...
 async fn handle_client(stream: TcpStream) -> Result<usize> {
     let mut written = 0;
+    match stream.local_addr() {
+        Ok(local_addr) => println!("Local {}", local_addr),
+        Err(e) => return Err(e),
+
+    }
+    match stream.peer_addr() {
+        Ok(peer_addr) => println!("Remote {}", peer_addr),
+        Err(e) => return Err(e),
+    }
+
     loop {
         match handle_read(&stream).await {
             Ok(request) => match handle_write(&stream, request).await {
@@ -83,8 +93,7 @@ async fn main() {
 
                 // will get socket handle plus IP/port for client
                 match listener.accept().await {
-                    Ok((socket, client)) => {
-                        println!("Connected: {}", client.to_string());
+                    Ok((socket, _client)) => {
 
                         // spawn a green thread per client so can accept more connections
                         tokio::spawn(async move {
