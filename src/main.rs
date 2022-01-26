@@ -59,6 +59,8 @@ async fn handle_write(stream: &TcpStream, response: String) -> Result<usize> {
 /// manage client connection from beginning to end...
 async fn handle_client(stream: TcpStream) -> Result<usize> {
     let mut written = 0;
+
+    // Log local/remote endpoints - can't imagine how this would hit an error...
     match stream.local_addr() {
         Ok(local_addr) => println!("Local {}", local_addr),
         Err(e) => return Err(e),
@@ -69,8 +71,14 @@ async fn handle_client(stream: TcpStream) -> Result<usize> {
         Err(e) => return Err(e),
     }
 
+    // Loop until connection is reset by either end
     loop {
+        // read from client
         match handle_read(&stream).await {
+
+            // write to proxy over gRPC
+            
+            // write back to client
             Ok(request) => match handle_write(&stream, request).await {
                 Ok(bytes) => written += bytes,
                 Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
