@@ -94,7 +94,7 @@ async fn handle_client(stream: TcpStream) -> Result<usize> {
 
 #[tokio::main]
 async fn main() {
-    match TcpListener::bind("127.0.0.1:8554").await {
+    match TcpListener::bind("0.0.0.0:8554").await {
         Ok(listener) => {
             println!("Listening for connections");
             loop {
