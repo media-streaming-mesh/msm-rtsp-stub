@@ -18,7 +18,7 @@
 // we need for XDS GRPC communication.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_files = vec![
-        "proto/msm/api/v1alpha1/rtsp/endpoint/endpoint.proto"
+        "proto/msm-rtsp-cp/api/v1alpha1/rtsp/endpoint/endpoint.proto"
     ]
     .iter()
     .map(|name| std::env::current_dir().unwrap().join(name))
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let include_dirs = vec![
         "proto/protoc-gen-validate",
-        "proto/msm"
+        "proto/msm-rtsp-cp"
     ]
     .iter()
     .map(|i| std::env::current_dir().unwrap().join(i))
