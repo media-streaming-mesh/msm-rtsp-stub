@@ -1,0 +1,9 @@
+[licenses]
+unlicensed = "deny"
+copyleft = "deny"
+default = "allow"
+exceptions = [
+    # Each entry is the crate and version constraint, and its specific allow
+    # list
+    { allow = ["MPL-2.0"], name = "slog-json", version = "*" },
+]

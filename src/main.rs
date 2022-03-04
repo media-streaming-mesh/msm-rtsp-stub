@@ -14,11 +14,17 @@
  * limitations under the License.
  */
 
+
+crate::include_proto!("endpoint");
+// use self::endpoint::get_endpoint_client::GetEndpointClient;
+// use self::endpoint::EndpointRequest;
+
 use tokio::net::{TcpListener, TcpStream};
 use std::io::{Error, ErrorKind, Result};
+use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 
 /// read command from client
-async fn handle_read(stream: &TcpStream) -> Result<String> {
+async fn client_read(stream: &TcpStream) -> Result<(bool, String)> {
     let mut buf = [0u8 ;4096];
 
     loop {
@@ -30,11 +36,11 @@ async fn handle_read(stream: &TcpStream) -> Result<String> {
             Ok(_) => {
                 if buf[0] == 36 {
                     println!("RTP Data");
-                    return Ok(String::from_utf8_lossy(&buf[1..]).to_string());
+                    return Ok((true, String::from_utf8_lossy(&buf[1..]).to_string()))
                 }
                 else {
                     println!("RTSP Command");
-                    return Ok(String::from_utf8_lossy(&buf).to_string());
+                    return Ok((false, String::from_utf8_lossy(&buf).to_string()))
                 }
             },
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
@@ -43,8 +49,37 @@ async fn handle_read(stream: &TcpStream) -> Result<String> {
     }
 }
 
+/// Send command to CP
+async fn send_command(cp_handle: &TcpStream, message: String) -> Result<SocketAddr> {
+    /*
+    let request = tonic::Request::new(
+        EndpointRequest {
+            req: message,
+        }
+    );
+
+    match cp_handle.send(request).await {
+        Ok(response) => {
+            let msg = response.into_inner().res;
+            let socket_addr: SocketAddr = msg.parse().unwrap();
+
+            println!(log, "API returned {:?}", socket_addr);
+
+            return Ok(socket_addr)
+        },
+        Err(e) => {
+            println!(log, "API send Error {:?}", e);
+
+            return Err(e)
+        },
+    }
+    */
+
+    return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
+}
+
 /// reflect back to client
-async fn handle_write(stream: &TcpStream, response: String) -> Result<usize> {
+async fn client_write(stream: &TcpStream, response: String) -> Result<usize> {
     loop {
         stream.writable().await?;
 
@@ -57,39 +92,56 @@ async fn handle_write(stream: &TcpStream, response: String) -> Result<usize> {
 }
 
 /// manage client connection from beginning to end...
-async fn handle_client(stream: TcpStream) -> Result<usize> {
-    let mut written = 0;
+async fn handle_client(client_stream: TcpStream) -> Result<usize> {
+    let mut written_back = 0;
 
     // Log local/remote endpoints - can't imagine how this would hit an error...
-    match stream.local_addr() {
+    match client_stream.local_addr() {
         Ok(local_addr) => println!("Local {}", local_addr),
-        Err(e) => return Err(e),
+        Err(e) => return Err(e)
 
     }
-    match stream.peer_addr() {
+    match client_stream.peer_addr() {
         Ok(peer_addr) => println!("Remote {}", peer_addr),
-        Err(e) => return Err(e),
+        Err(e) => return Err(e)
     }
 
-    // Loop until connection is reset by either end
-    loop {
-        // read from client
-        match handle_read(&stream).await {
+    // match GetEndpointClient::connect("http://127.0.0.1:50051").await {
+    match TcpStream::connect("http://127.0.0.1:50051").await {
+        Ok(mut cp_handle) => {
+            // Loop until connection is reset by either end
+            loop {
+                // read from client
+                match client_read(&client_stream).await {
+                    Ok((interleaved, data)) => {
+                        if interleaved {    
+                            // Send data to DP proxy over UDP
+                            // need to convert from string to bytes somewhere...
+                            // match send_interleaved(dp_handle, data) {}
+                        }
+                        else {
+                            // Send command to CP proxy over gRPC
 
-            // write to proxy over gRPC
-            
-            // write back to client
-            Ok(request) => match handle_write(&stream, request).await {
-                Ok(bytes) => written += bytes,
-                Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
-                Err(e) => return Err(e.into()),
-            },
-            Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
-            Err(e) => return Err(e.into()),
-        }
+                            match send_command(&cp_handle, data).await {
+                                // write response back to client
+                                Ok(request) => match client_write(&client_stream, request.to_string()).await {
+                                    Ok(bytes) => written_back += bytes,
+                                    Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
+                                    Err(e) => return Err(e.into()),
+                                }
+                                Err(e) => return Err(e.into()),
+                            }
+                        }
+                    },
+                    Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        },
+        Err(e) => return Err(e.into())
     }
 
-    return Ok(written)
+    return Ok(written_back)
 }
 
 #[tokio::main]
