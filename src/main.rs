@@ -14,14 +14,16 @@
  * limitations under the License.
  */
 
+pub mod msm_cp {
+    tonic::include_proto!("msm_cp");
+}
 
-crate::include_proto!("endpoint");
-// use self::endpoint::get_endpoint_client::GetEndpointClient;
-// use self::endpoint::EndpointRequest;
+use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
+use self::msm_cp::ClientRequest;
 
 use tokio::net::{TcpListener, TcpStream};
 use std::io::{Error, ErrorKind, Result};
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use std::net::SocketAddr;
 
 /// read command from client
 async fn client_read(stream: &TcpStream) -> Result<(bool, String)> {
@@ -49,35 +51,6 @@ async fn client_read(stream: &TcpStream) -> Result<(bool, String)> {
     }
 }
 
-/// Send command to CP
-async fn send_command(cp_handle: &TcpStream, message: String) -> Result<SocketAddr> {
-    /*
-    let request = tonic::Request::new(
-        EndpointRequest {
-            req: message,
-        }
-    );
-
-    match cp_handle.send(request).await {
-        Ok(response) => {
-            let msg = response.into_inner().res;
-            let socket_addr: SocketAddr = msg.parse().unwrap();
-
-            println!(log, "API returned {:?}", socket_addr);
-
-            return Ok(socket_addr)
-        },
-        Err(e) => {
-            println!(log, "API send Error {:?}", e);
-
-            return Err(e)
-        },
-    }
-    */
-
-    return Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
-}
-
 /// reflect back to client
 async fn client_write(stream: &TcpStream, response: String) -> Result<usize> {
     loop {
@@ -94,20 +67,21 @@ async fn client_write(stream: &TcpStream, response: String) -> Result<usize> {
 /// manage client connection from beginning to end...
 async fn handle_client(client_stream: TcpStream) -> Result<usize> {
     let mut written_back = 0;
+    let dest_addr: SocketAddr;
+    let source_addr: SocketAddr;
 
     // Log local/remote endpoints - can't imagine how this would hit an error...
     match client_stream.local_addr() {
-        Ok(local_addr) => println!("Local {}", local_addr),
+        Ok(local_addr) => dest_addr = local_addr,
         Err(e) => return Err(e)
 
     }
     match client_stream.peer_addr() {
-        Ok(peer_addr) => println!("Remote {}", peer_addr),
+        Ok(peer_addr) => source_addr = peer_addr,
         Err(e) => return Err(e)
     }
 
-    // match GetEndpointClient::connect("http://127.0.0.1:50051").await {
-    match TcpStream::connect("http://127.0.0.1:50051").await {
+    match MsmControlPlaneClient::connect("http://127.0.0.1:50051").await {
         Ok(mut cp_handle) => {
             // Loop until connection is reset by either end
             loop {
@@ -121,15 +95,31 @@ async fn handle_client(client_stream: TcpStream) -> Result<usize> {
                         }
                         else {
                             // Send command to CP proxy over gRPC
-
-                            match send_command(&cp_handle, data).await {
-                                // write response back to client
-                                Ok(request) => match client_write(&client_stream, request.to_string()).await {
-                                    Ok(bytes) => written_back += bytes,
-                                    Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
-                                    Err(e) => return Err(e.into()),
+                            let request = tonic::Request::new(
+                                ClientRequest {
+                                    request: data,
+                                    source: source_addr.to_string(),
+                                    dest: dest_addr.to_string(),
                                 }
-                                Err(e) => return Err(e.into()),
+                            );
+                        
+                            match cp_handle.send(request).await {
+                                Ok(response) => {
+                                    let msg = response.into_inner().response;
+                        
+                                    println!("API returned {:?}", msg);
+                        
+                                    match client_write(&client_stream, msg.to_string()).await {
+                                        Ok(bytes) => written_back += bytes,
+                                        Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
+                                        Err(e) => return Err(e.into()),
+                                    }
+                                },
+                                Err(e) => {
+                                    println!( "API send Error {:?}", e);
+                        
+                                    return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string()))
+                                },
                             }
                         }
                     },
@@ -138,7 +128,7 @@ async fn handle_client(client_stream: TcpStream) -> Result<usize> {
                 }
             }
         },
-        Err(e) => return Err(e.into())
+        Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
     }
 
     return Ok(written_back)

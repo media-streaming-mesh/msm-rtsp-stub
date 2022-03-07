@@ -1,11 +1,12 @@
 [workspace]
-members = [".", "./macros"]
+members = ["."]
 
 [package]
 name = "msm-rtsp-stub"
 version = "0.0.1-dev"
 authors = ["Giles Heron <giheron@cisco.com>"]
 description = "RTSP Sidecar Stub Proxy written in Rust"
+homepage = "https://github.com/media-streaming-mesh/msm-rtsp-stub"
 repository = "https://github.com/media-streaming-mesh/msm-rtsp-stub"
 readme = "README.md"
 keywords = ["RTSP"]
@@ -13,13 +14,10 @@ license = "Apache-2.0"
 edition = "2018"
 
 [dependencies]
-# Local
-msm-rtsp-stub-macros = { version = "0.0.1-dev", path = "./macros" }
-
 # Crates.io
 bytes = "1.0.1"
-prost = "=0.8"
-prost-types = "=0.8"
+prost = "0.8.0"
+prost-types = "0.8.0"
 slog = "2.7.0"
 slog-async = "2.6.0"
 slog-json = "2.3.0"
@@ -29,5 +27,5 @@ tokio-stream = "0.1.2"
 tonic = "0.5.0"
 
 [build-dependencies]
-tonic-build = { version = "0.5.2", default_features = false, features = ["transport", "prost"] }
-prost-build = "=0.8"
+tonic-build = { version = "0.5.1", default_features = false, features = ["transport", "prost"] }
+prost-build = "0.8.0"

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package msm_cp;
+
+option go_package = "msm_cp";
+
+service MsmControlPlane {
+	rpc Send (ClientRequest) returns (ControlPlaneResponse);
+}
+
+message ClientRequest {
+	string source = 1;
+	string dest = 2;
+	string request = 3;
+}
+
+message ControlPlaneResponse {
+	string response = 1;
+}
