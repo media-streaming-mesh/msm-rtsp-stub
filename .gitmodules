@@ -1,3 +1,0 @@
-[submodule "proto/msm-rtsp-cp"]
-	path = proto/msm-rtsp-cp
-	url = https://github.com/media-streaming-mesh/msm-rtsp-cp
