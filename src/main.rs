@@ -134,7 +134,7 @@ async fn handle_client(client_stream: TcpStream) -> Result<usize> {
     return Ok(written_back)
 }
 
-#[tokio::main]
+#[tokio::main (flavor="current_thread")]
 async fn main() {
     match TcpListener::bind(":::8554").await {
         Ok(listener) => {
