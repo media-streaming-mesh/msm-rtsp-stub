@@ -2,18 +2,26 @@ syntax = "proto3";
 
 package msm_cp;
 
-option go_package = "msm_cp";
+option go_package = "github.com/media-streaming-mesh/msm-cp/api/v1alpha1/msm_cp;msm_cp";
+
+import "google/protobuf/empty.proto";
 
 service MsmControlPlane {
-	rpc Send (ClientRequest) returns (ControlPlaneResponse);
+	rpc ClientConnect (Endpoints) returns (google.protobuf.Empty);
+	rpc ClientRequest (Request) returns (Response);
+	rpc ServerConnect (Endpoints) returns (google.protobuf.Empty);
+	rpc ServerRequest (Request) returns (Response);
 }
 
-message ClientRequest {
+message Endpoints {
 	string source = 1;
 	string dest = 2;
-	string request = 3;
 }
 
-message ControlPlaneResponse {
-	string response = 1;
+message Request {
+	string request = 1;
 }
+
+message Response {
+	string response = 1;
+} 
