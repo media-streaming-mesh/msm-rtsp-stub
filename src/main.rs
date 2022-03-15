@@ -26,23 +26,23 @@ use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 
 /// read command from client
-async fn client_read(stream: &TcpStream) -> Result<(bool, String)> {
-    let mut buf = [0u8 ;4096];
-
+async fn client_read(stream: &TcpStream) -> Result<(bool, Vec<u8>)> {
     loop {
         // wait until we can read from the stream
         stream.readable().await?;
 
+        let mut buf = [0u8; 4096];
+
         match stream.try_read(&mut buf) {
             Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
-            Ok(_) => {
+            Ok(bytes_read) => {
                 if buf[0] == 36 {
                     println!("RTP Data");
-                    return Ok((true, String::from_utf8_lossy(&buf[1..]).to_string()))
+                    return Ok((true, buf[1..bytes_read].to_vec()))
                 }
                 else {
                     println!("RTSP Command");
-                    return Ok((false, String::from_utf8_lossy(&buf).to_string()))
+                    return Ok((false, buf[..bytes_read].to_vec()))
                 }
             },
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
@@ -109,31 +109,39 @@ async fn handle_client(client_stream: TcpStream) -> Result<usize> {
                                     // match send_interleaved(dp_handle, data) {}
                                 }
                                 else {
-                                    // Send command to CP proxy over gRPC
-                                    let request = tonic::Request::new(
-                                        Request {
-                                            request: data,
-                                        }
-                                    );
+                                    match String::from_utf8(data) {
+                                        Ok(request_string) => {
+                                            // Send command to CP proxy over gRPC
+                                            let request = tonic::Request::new(
+                                                Request {
+                                                    request: request_string,
+                                                }
+                                            );
                         
-                                    match cp_handle.client_request(request).await {
-                                        Ok(response) => {
-                                            let msg = response.into_inner().response;
+                                            match cp_handle.client_request(request).await {
+                                                Ok(response) => {
+                                                    let msg = response.into_inner().response;
                         
-                                            println!("API returned {:?}", msg);
+                                                    println!("API returned {:?}", msg);
                         
-                                            match client_write(&client_stream, msg.to_string()).await {
-                                                Ok(bytes) => written_back += bytes,
-                                                Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
-                                                Err(e) => return Err(e.into()),
+                                                    match client_write(&client_stream, msg.to_string()).await {
+                                                        Ok(bytes) => written_back += bytes,
+                                                        Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
+                                                        Err(e) => return Err(e.into()),
+                                                    }
+                                                },
+                                                Err(e) => {
+                                                    println!( "API send Error {:?}", e);
+                        
+                                                    return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string()))
+                                                },
                                             }
                                         },
                                         Err(e) => {
-                                            println!( "API send Error {:?}", e);
-                        
-                                        return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string()))
+                                            return Err(Error::new(ErrorKind::InvalidData, e))
                                         },
                                     }
+
                                 }
                             },
                             Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
