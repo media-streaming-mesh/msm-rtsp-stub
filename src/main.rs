@@ -21,9 +21,11 @@ pub mod msm_cp {
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
 use self::msm_cp::{Endpoints, Request};
 
-use tokio::net::{TcpListener, TcpStream};
 use std::io::{Error, ErrorKind, Result};
-use std::net::SocketAddr;
+
+use tokio::net::{TcpListener, TcpStream};
+use tonic::transport::Channel;
+
 
 /// read command from client
 async fn client_read(stream: &TcpStream) -> Result<(bool, Vec<u8>)> {
@@ -64,24 +66,8 @@ async fn client_write(stream: &TcpStream, response: String) -> Result<usize> {
     }
 }
 
-/// manage client connection from beginning to end...
-async fn handle_client(client_stream: TcpStream) -> Result<usize> {
-    let mut written_back = 0;
-    let dest_addr: SocketAddr;
-    let source_addr: SocketAddr;
-
-    // Log local/remote endpoints - can't imagine how this would hit an error...
-    match client_stream.local_addr() {
-        Ok(local_addr) => dest_addr = local_addr,
-        Err(e) => return Err(e)
-
-    }
-
-    match client_stream.peer_addr() {
-        Ok(peer_addr) => source_addr = peer_addr,
-        Err(e) => return Err(e)
-    }
-
+/// Connect to CP
+async fn cp_connect(source_addr: String, dest_addr: String) -> Result<MsmControlPlaneClient<Channel>> {
     println!("connecting to control plane");
 
     match MsmControlPlaneClient::connect("http://127.0.0.1:50051").await {
@@ -91,69 +77,98 @@ async fn handle_client(client_stream: TcpStream) -> Result<usize> {
 
             let request = tonic::Request::new(
                 Endpoints {
-                    source: source_addr.to_string(),
-                    dest: dest_addr.to_string(),
+                    source: source_addr,
+                    dest: dest_addr,
                 }
             );
 
             match cp_handle.client_connect(request).await {
                 Ok(_) => {
-                    // Loop until connection is reset by either end
-                    loop {
-                        // read from client
-                        match client_read(&client_stream).await {
-                            Ok((interleaved, data)) => {
-                                if interleaved {    
-                                    // Send data to DP proxy over UDP
-                                    // need to convert from string to bytes somewhere...
-                                    // match send_interleaved(dp_handle, data) {}
-                                }
-                                else {
-                                    match String::from_utf8(data) {
-                                        Ok(request_string) => {
-                                            // Send command to CP proxy over gRPC
-                                            let request = tonic::Request::new(
-                                                Request {
-                                                    request: request_string,
-                                                }
-                                            );
-                        
-                                            match cp_handle.client_request(request).await {
-                                                Ok(response) => {
-                                                    let msg = response.into_inner().response;
-                        
-                                                    println!("API returned {:?}", msg);
-                        
-                                                    match client_write(&client_stream, msg.to_string()).await {
-                                                        Ok(bytes) => written_back += bytes,
-                                                        Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
-                                                        Err(e) => return Err(e.into()),
-                                                    }
-                                                },
-                                                Err(e) => {
-                                                    println!( "API send Error {:?}", e);
-                        
-                                                    return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string()))
-                                                },
-                                            }
-                                        },
-                                        Err(e) => {
-                                            return Err(Error::new(ErrorKind::InvalidData, e))
-                                        },
-                                    }
-
-                                }
-                            },
-                            Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
-                            Err(e) => return Err(e.into()),
-                        }
-                    }
+                    return Ok(cp_handle)
                 },
                 Err(e) => {
                     println!( "API connect Error {:?}", e);
         
                     return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string()))
                 },
+            }
+        },
+        Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+    }
+
+}
+
+/// Send request to CP
+async fn cp_send(mut cp_handle: MsmControlPlaneClient<Channel>, request_string: String) -> Result<String> {
+    let request = tonic::Request::new(
+        Request {
+            request: request_string,
+        }
+    );
+
+    match cp_handle.client_request(request).await {
+        Ok(response) => {
+            let message = response.into_inner().response;
+
+            println!("API returned {:?}", message);
+
+            return Ok(message);
+        },
+        Err(e) => {
+            println!( "API send Error {:?}", e);
+
+            return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string()))
+        },
+    }
+}
+
+/// manage client connection from beginning to end...
+async fn handle_client(client_stream: TcpStream) -> Result<usize> {
+    let mut written_back = 0;
+    let source_addr = client_stream.peer_addr()?.to_string();
+    let dest_addr = client_stream.local_addr()?.to_string();
+
+    println!("connecting to control plane");
+
+    match cp_connect(source_addr, dest_addr).await {
+        Ok(cp_handle) => {
+            // Loop until connection is reset by either end
+            loop {
+                // read from client
+                match client_read(&client_stream).await {
+                    Ok((interleaved, data)) => {
+                        if interleaved {    
+                            // Send data to DP proxy over UDP
+                            // need to convert from string to bytes somewhere...
+                            // match send_interleaved(dp_handle, data) {}
+                        }
+                        else {
+                            match String::from_utf8(data) {
+                                Ok(request_string) => {
+                                    match cp_send(cp_handle.clone(), request_string).await {
+                                        Ok(response) => {
+                                            match client_write(&client_stream, response).await {
+                                                Ok(bytes) => written_back += bytes,
+                                                Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
+                                                Err(e) => return Err(e.into()),
+                                            }
+                                        },
+                                        Err(e) => {
+                                            println!( "API send Error {:?}", e);
+                        
+                                            return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string()))
+                                        },
+                                    }
+                                },
+                                Err(e) => {
+                                    return Err(Error::new(ErrorKind::InvalidData, e))
+                                },
+                            }
+                        }
+                    },
+                    Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
+                    Err(e) => return Err(e.into()),
+                }
             }
         },
         Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
