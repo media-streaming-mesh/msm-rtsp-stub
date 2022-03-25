@@ -18,13 +18,19 @@ pub mod msm_cp {
     tonic::include_proto!("msm_cp");
 }
 
+use futures::future::join_all;
+
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
 use self::msm_cp::{Endpoints, Request};
 
 use std::io::{Error, ErrorKind, Result};
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 use tokio::net::{TcpListener, TcpStream};
 use tonic::transport::Channel;
+
+use void::Void;
 
 
 /// read command from client
@@ -68,7 +74,6 @@ async fn client_write(stream: &TcpStream, response: String) -> Result<usize> {
 
 /// Connect to CP
 async fn cp_connect(source_addr: String, dest_addr: String) -> Result<MsmControlPlaneClient<Channel>> {
-    println!("connecting to control plane");
 
     match MsmControlPlaneClient::connect("http://127.0.0.1:50051").await {
         Ok(mut cp_handle) => {
@@ -177,9 +182,9 @@ async fn handle_client(client_stream: TcpStream) -> Result<usize> {
     return Ok(written_back)
 }
 
-#[tokio::main (flavor="current_thread")]
-async fn main() {
-    match TcpListener::bind(":::8554").await {
+/// Client listener
+async fn client_listener(socket: SocketAddr) -> Result<Void> {
+    match TcpListener::bind(socket).await {
         Ok(listener) => {
             println!("Listening for connections");
             loop {
@@ -198,12 +203,39 @@ async fn main() {
                             }
                         });
                     },
-                    Err(e) => {
-                        println!("Unable to connect: {}", e);
-                    },
+                    Err(e) => return Err(e),
                 }
             }
         },
-        Err(e) => println!("Unable to open listener socket: {}", e),
+        Err(e) => return Err(e),
     }
+}
+
+/// CP listener
+async fn cp_listener(_socket: SocketAddr) -> Result<Void> {
+    Err(Error::new(ErrorKind::NotConnected, "unexpected"))
+}
+
+#[tokio::main (flavor="current_thread")]
+async fn main() {
+
+    let mut handles = vec![];
+    // spawn a green thread for the client listener
+    handles.push(tokio::spawn(async move {
+        match client_listener(SocketAddr::from_str(":::8554").unwrap()).await {
+            Ok(written) => println!("Disconnected: wrote {} bytes", written),
+            Err(e) => println!("Error: {}", e),
+        }
+    }));
+
+    // spawn a green thread for the CP listener
+    handles.push(tokio::spawn(async move {
+        match cp_listener(SocketAddr::from_str(":::9000").unwrap()).await {
+            Ok(written) => println!("Disconnected: wrote {} bytes", written),
+            Err(e) => println!("Error: {}", e),
+        }
+    }));
+
+    // wait for all green threads to finish (not gonna happen)
+    join_all(handles).await;
 }
