@@ -14,25 +14,5 @@
  * limitations under the License.
  */
 
-syntax = "proto3";
-
-package msm_cp;
-
-option go_package = "github.com/media-streaming-mesh/msm-cp/api/v1alpha1/msm_cp;msm_cp";
-
-enum Event {
-	ADD = 0;
-	DELETE = 1;
-	DATA = 2;
-}
-
-service MsmControlPlane {
-	rpc Send (stream Message) returns (stream Message);
-}
-
-message Message {
-	Event event = 1;
-	string local = 2;
-	string remote = 3;
-	string data = 4;
-}
+mod client;
+mod cp;
