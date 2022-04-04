@@ -18,8 +18,6 @@ use msm_rtsp_stub::client::client_listener;
 use msm_rtsp_stub::cp::cp_connector;
 
 use futures::future::join_all;
-use std::net::SocketAddr;
-use std::str::FromStr;
 
 #[tokio::main (flavor="current_thread")]
 async fn main() {
@@ -27,16 +25,16 @@ async fn main() {
     let mut handles = vec![];
     // spawn a green thread for the client communication
     handles.push(tokio::spawn(async {
-        match client_listener(":::8554").unwrap()).await {
-            Ok() => println!("Disconnected!"),
+        match client_listener(":::8554".to_string()).await {
+            Ok(()) => println!("Disconnected!"),
             Err(e) => println!("Error: {}", e),
         }
     }));
 
     // spawn a green thread for the CP communication
     handles.push(tokio::spawn(async {
-        match cp_connector("http://127.0.0.1:9000").unwrap()).await {
-            Ok(_) => println!("Disconnected!"),
+        match cp_connector("http://127.0.0.1:9000".to_string()).await {
+            Ok(()) => println!("Disconnected!"),
             Err(e) => println!("Error: {}", e),
         }
     }));

@@ -27,7 +27,7 @@ enum Event {
 }
 
 service MsmControlPlane {
-	rpc Send (stream Message) returns (stream Message);
+	rpc Send (stream Message) returns (stream Message) {}
 }
 
 message Message {

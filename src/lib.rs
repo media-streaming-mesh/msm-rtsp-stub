@@ -14,5 +14,5 @@
  * limitations under the License.
  */
 
-mod client;
-mod cp;
+pub mod client;
+pub mod cp;

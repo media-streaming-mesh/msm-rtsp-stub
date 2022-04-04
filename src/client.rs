@@ -99,7 +99,7 @@ async fn handle_client(client_stream: TcpStream) -> Result<()> {
     });
 
     match cp::cp_register(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
-        Ok(channel) => {
+        Ok(()) => {
             loop {
                 // read from client
                 match client_read(&reader).await {
@@ -142,7 +142,7 @@ async fn handle_client(client_stream: TcpStream) -> Result<()> {
 }
 
 /// Client listener
-pub async fn client_listener(socket: &str) -> Result<()> {
+pub async fn client_listener(socket: String) -> Result<()> {
     match TcpListener::bind(socket).await {
         Ok(listener) => {
             println!("Listening for connections");
