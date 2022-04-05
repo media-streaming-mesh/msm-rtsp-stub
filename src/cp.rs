@@ -51,7 +51,7 @@ pub async fn cp_register(tx: mpsc::Sender::<String>, local_addr: String, remote_
 
     match GRPC_TX.get().unwrap().send(message).await {
         Ok(()) => {
-            match HASH_TX.get().unwrap().send((HashmapCommand::Insert, format!("{}{}", local_addr, remote_addr), Some(tx), None)).await {
+            match HASH_TX.get().unwrap().send((HashmapCommand::Insert, format!("{} {}", local_addr, remote_addr), Some(tx), None)).await {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
             }
@@ -71,7 +71,7 @@ pub async fn cp_deregister(local_addr: String, remote_addr: String) -> Result<()
 
     match GRPC_TX.get().unwrap().send(message).await {
         Ok(()) => {
-            match HASH_TX.get().unwrap().send((HashmapCommand::Remove,  format!("{}{}", local_addr, remote_addr), None, None)).await {
+            match HASH_TX.get().unwrap().send((HashmapCommand::Remove,  format!("{} {}", local_addr, remote_addr), None, None)).await {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
             }
@@ -101,6 +101,7 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
 
     loop {
         let (command, key, optional_value, optional_data) = chan_rx.recv().await.unwrap();
+        println!("hashmap key is {}", key);
         match command {
             HashmapCommand::Insert => {
                 match channels.insert(key.clone(), optional_value.unwrap()) {
@@ -115,8 +116,10 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
                 }
             },
             HashmapCommand::Send => {
+                println!("sending data to key {}", key);
                 match channels.get(&key) {
                     Some(value_ref) => { 
+                        println!("found channel for key {}",  key);
                         match value_ref.send(optional_data.unwrap()).await {
                             Ok(()) => {},
                             Err(_e) => { println!("unable to send data for key {}", key) },
@@ -133,6 +136,7 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
 async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channel: Option<mpsc::Sender<String>>, optional_data: Option<String>) -> Result<()> {
     match HASH_TX.get() {
         Some(channel) => {
+            println!("sending command to hashmap for key {}", key);
             match channel.send((command, key, optional_channel, optional_data)).await {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
@@ -148,7 +152,7 @@ async fn cp_add_flow(local_addr: String, remote_addr: String) -> Result<()> {
     let (tx, rx) = mpsc::channel::<String>(5);
 
     match client_outbound(local_addr.clone(), remote_addr.clone(), rx).await {
-        Ok(()) => return cp_access_hashmap(HashmapCommand::Insert, format!("{}{}", local_addr.clone(), remote_addr.clone()), Some(tx.clone()), None).await,
+        Ok(()) => return cp_access_hashmap(HashmapCommand::Insert, format!("{} {}", local_addr.clone(), remote_addr.clone()), Some(tx.clone()), None).await,
         Err(e) => return Err(e),
     }
 }
@@ -160,6 +164,7 @@ async fn cp_del_flow(key: String) -> Result<()> {
 
 /// Received data from CP
 async fn cp_data_rcvd(key: String, data: String) -> Result<()> {
+    println!("Data {} received from CP for flow {}", data, key);
     return cp_access_hashmap(HashmapCommand::Send, key, None, Some(data)).await;
 }
 
@@ -168,6 +173,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 
     let requests = async_stream::stream! {
         loop {
+            println!("request for CP");
             yield grpc_rx.recv().await.unwrap();
         }
     };
@@ -179,12 +185,32 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
             loop {
                 match inbound.message().await {
                     Ok(option) => {
+                        println!("received from CP");
                         match option {
                             Some(message) => {
+                                println!("Message {} received from CP", message.event);
                                 match Event::from_i32(message.event) {
-                                    Some(Event::Add) => cp_add_flow(message.local, message.remote).await.unwrap(),
-                                    Some(Event::Delete) => cp_del_flow(format!("{}{}", message.local, message.remote)).await.unwrap(),
-                                    Some(Event::Data) => cp_data_rcvd(format!("{}{}", message.local, message.remote), message.data).await.unwrap(),
+                                    Some(Event::Add) => {
+                                        println!("add from CP");
+                                        match cp_add_flow(message.local, message.remote).await {
+                                            Ok(()) => println!("CP added flow"),
+                                            Err(e) => return Err(e),
+                                        }
+                                    },
+                                    Some(Event::Delete) => {
+                                        println!("delete from CP");
+                                        match cp_del_flow(format!("{}{}", message.local, message.remote)).await {
+                                            Ok(()) => println!("CP deleted flow"),
+                                            Err(e) => return Err(e),
+                                        }
+                                    },
+                                    Some(Event::Data) => {
+                                        println!("data from CP");
+                                        match cp_data_rcvd(format!("{} {}", message.local, message.remote), message.data).await {
+                                            Ok(()) => println!("data received from CP"),
+                                            Err(e) => return Err(e),
+                                        }
+                                    },
                                     None => return Err(Error::new(ErrorKind::InvalidInput, "Invalid gRPC operation")),
                                 }
                             },

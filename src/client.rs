@@ -50,11 +50,17 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, Vec<u8>)> {
 
 /// reflect back to client
 async fn client_write(writer: &OwnedWriteHalf, response: String) -> Result<usize> {
+    println!("writing response {} to client", response);
     loop {
+        println!("waiting to be writable");
         writer.writable().await?;
+        println!("writable");
 
         match writer.try_write(response.as_bytes()) {
-            Ok(bytes) => return Ok(bytes),
+            Ok(bytes) => {
+                println!("{} bytes written", bytes);
+                return Ok(bytes)
+            },
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
             Err(e) => return Err(e.into()),
         }
@@ -72,6 +78,7 @@ async fn client_cp_recv(mut rx: mpsc::Receiver<String>, writer: OwnedWriteHalf) 
             Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
             Err(e) => return Err(e.into()),
         }
+        println!("about to loop again");
     }
 
     return Ok(written_back);
@@ -81,6 +88,7 @@ async fn client_cp_recv(mut rx: mpsc::Receiver<String>, writer: OwnedWriteHalf) 
 async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream, rx: mpsc::Receiver<String>) -> Result<()> {
 
     // split the client socket into sender/receiver
+    client_stream.set_nodelay(true)?;
     let (reader, writer) = client_stream.into_split();
 
     // Spawn a thread to receive the messages
