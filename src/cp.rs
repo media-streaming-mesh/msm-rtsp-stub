@@ -18,6 +18,8 @@ pub mod msm_cp {
     tonic::include_proto!("msm_cp");
 }
 
+use crate::client::client_outbound;
+
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
 use self::msm_cp::{Event, Message};
 
@@ -127,6 +129,40 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
     }
 }
 
+/// Send to hashmap owner
+async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channel: Option<mpsc::Sender<String>>, optional_data: Option<String>) -> Result<()> {
+    match HASH_TX.get() {
+        Some(channel) => {
+            match channel.send((command, key, optional_channel, optional_data)).await {
+                Ok(()) => return Ok(()),
+                Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
+            }
+        },
+        None => return Err(Error::new(ErrorKind::NotFound, "OnceCell not initlialised")),
+    }
+}
+
+/// Add flow from CP
+async fn cp_add_flow(local_addr: String, remote_addr: String) -> Result<()> {
+    // Create channel to send CP messages to client
+    let (tx, rx) = mpsc::channel::<String>(5);
+
+    match client_outbound(local_addr.clone(), remote_addr.clone(), rx).await {
+        Ok(()) => return cp_access_hashmap(HashmapCommand::Insert, format!("{}{}", local_addr.clone(), remote_addr.clone()), Some(tx.clone()), None).await,
+        Err(e) => return Err(e),
+    }
+}
+
+/// Delete flow from CP
+async fn cp_del_flow(key: String) -> Result<()> {
+    return cp_access_hashmap(HashmapCommand::Remove, key, None, None).await;
+}
+
+/// Received data from CP
+async fn cp_data_rcvd(key: String, data: String) -> Result<()> {
+    return cp_access_hashmap(HashmapCommand::Send, key, None, Some(data)).await;
+}
+
 /// Run bidirectional streaming RPC
 async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mpsc::Receiver<Message>) -> Result<()> {
 
@@ -146,22 +182,9 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                         match option {
                             Some(message) => {
                                 match Event::from_i32(message.event) {
-                                    Some(Event::Add) => {
-                                        // New flow created by CP
-                                    },
-                                    Some(Event::Delete) => {
-                                        // CP deleting a flow
-                                    },
-                                    Some(Event::Data) => {
-                                        // data from CP - send to client via the hashmap handler
-                                        match HASH_TX.get().unwrap().send(( HashmapCommand::Send,
-                                                                            format!("{}{}", message.local, message.remote),
-                                                                            None,
-                                                                            Some(message.data)  )).await {
-                                            Ok(()) => return Ok(()),
-                                            Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
-                                        }
-                                    },
+                                    Some(Event::Add) => cp_add_flow(message.local, message.remote).await.unwrap(),
+                                    Some(Event::Delete) => cp_del_flow(format!("{}{}", message.local, message.remote)).await.unwrap(),
+                                    Some(Event::Data) => cp_data_rcvd(format!("{}{}", message.local, message.remote), message.data).await.unwrap(),
                                     None => return Err(Error::new(ErrorKind::InvalidInput, "Invalid gRPC operation")),
                                 }
                             },
