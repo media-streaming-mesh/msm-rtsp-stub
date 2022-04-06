@@ -16,6 +16,8 @@
 
 use crate::cp;
 
+use log::{debug, error, trace};
+
 use std::io::{Error, ErrorKind, Result};
 
 use tokio::net::{TcpListener, TcpStream};
@@ -34,11 +36,11 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, Vec<u8>)> {
             Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
             Ok(bytes_read) => {
                 if buf[0] == 36 {
-                    println!("RTP Data");
+                    debug!("RTP Data");
                     return Ok((true, buf[1..bytes_read].to_vec()))
                 }
                 else {
-                    println!("RTSP Command");
+                    debug!("RTSP Command");
                     return Ok((false, buf[..bytes_read].to_vec()))
                 }
             },
@@ -50,15 +52,15 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, Vec<u8>)> {
 
 /// reflect back to client
 async fn client_write(writer: &OwnedWriteHalf, response: String) -> Result<usize> {
-    println!("writing response {} to client", response);
+    trace!("writing response {} to client", response);
     loop {
-        println!("waiting to be writable");
+        trace!("waiting to be writable");
         writer.writable().await?;
-        println!("writable");
+        trace!("writable");
 
         match writer.try_write(response.as_bytes()) {
             Ok(bytes) => {
-                println!("{} bytes written", bytes);
+                debug!("{} bytes written", bytes);
                 return Ok(bytes)
             },
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
@@ -72,13 +74,13 @@ async fn client_cp_recv(mut rx: mpsc::Receiver<String>, writer: OwnedWriteHalf) 
     let mut written_back = 0;
 
     while let Some(message) = rx.recv().await {
-        println!("received {} from CP", message);
+        trace!("received {} from CP", message);
         match client_write(&writer, message).await {
             Ok(bytes) => written_back += bytes,
             Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
             Err(e) => return Err(e.into()),
         }
-        println!("about to loop again");
+        trace!("about to loop again");
     }
 
     return Ok(written_back);
@@ -95,9 +97,9 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
     tokio::spawn(async move {
         match client_cp_recv(rx, writer).await {
             Ok(written) => {
-                println!("Disconnected: wrote {} bytes", written);
+                debug!("Disconnected: wrote {} bytes", written);
             },
-            Err(e) => println!("Error: {}", e),
+            Err(e) => error!("Error: {}", e),
         }
     });
 
@@ -113,14 +115,10 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                 else {
                     match String::from_utf8(data) {
                         Ok(request_string) => {
-                            println!("Client request is {}", request_string);
+                            trace!("Client request is {}", request_string);
                             match cp::cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
-                                Ok(()) => println!("written to CP"),
-                                Err(e) => {
-                                    println!( "API send Error {:?}", e);
-                
-                                    return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string()))
-                                },
+                                Ok(()) => debug!("written to CP"),
+                                Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
                             }
                         },
                         Err(e) => {
@@ -188,20 +186,20 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
 pub async fn client_listener(socket: String) -> Result<()> {
     match TcpListener::bind(socket).await {
         Ok(listener) => {
-            println!("Listening for connections");
+            debug!("Listening for connections");
             loop {
 
                 // will get socket handle plus IP/port for client
                 match listener.accept().await {
                     Ok((stream, client)) => {
 
-                        println!("connected, client is {:?}", client);
+                        debug!("connected, client is {:?}", client);
 
                         // spawn a green thread per client so can accept more connections
                         tokio::spawn(async move {
                             match client_inbound(stream).await {
-                                Ok(()) => println!("Disconnected"),
-                                Err(e) => println!("Error: {}", e),
+                                Ok(()) => debug!("Disconnected"),
+                                Err(e) => error!("Error: {}", e),
                             }
                         });
                     },

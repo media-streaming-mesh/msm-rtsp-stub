@@ -20,6 +20,8 @@ pub mod msm_cp {
 
 use crate::client::client_outbound;
 
+use log::{debug, trace, warn};
+
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
 use self::msm_cp::{Event, Message};
 
@@ -101,31 +103,31 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
 
     loop {
         let (command, key, optional_value, optional_data) = chan_rx.recv().await.unwrap();
-        println!("hashmap key is {}", key);
+        trace!("hashmap key is {}", key);
         match command {
             HashmapCommand::Insert => {
                 match channels.insert(key.clone(), optional_value.unwrap()) {
-                    Some(_value) => { println!("key {} already present!", key) },
-                    None => { println!("key {} added", key) },
+                    Some(_value) => { warn!("key {} already present!", key) },
+                    None => { debug!("key {} added", key) },
                 }
             },
             HashmapCommand::Remove => {
                 match channels.remove(&key) {
-                    Some(_value) => { println!("key {} removed", key) },
-                    None => { println!("key {} not present!", key) },
+                    Some(_value) => { debug!("key {} removed", key) },
+                    None => { warn!("key {} not present!", key) },
                 }
             },
             HashmapCommand::Send => {
-                println!("sending data to key {}", key);
+                trace!("sending data to key {}", key);
                 match channels.get(&key) {
                     Some(value_ref) => { 
-                        println!("found channel for key {}",  key);
+                        trace!("found channel for key {}",  key);
                         match value_ref.send(optional_data.unwrap()).await {
-                            Ok(()) => {},
-                            Err(_e) => { println!("unable to send data for key {}", key) },
+                            Ok(()) => { debug!("sent data to channel") },
+                            Err(_e) => { warn!("unable to send data for key {}", key) },
                         }
                     },
-                    None => { println!("key {} not present!", key) },
+                    None => { warn!("key {} not present!", key) },
                 }
             },
         }
@@ -136,7 +138,7 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
 async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channel: Option<mpsc::Sender<String>>, optional_data: Option<String>) -> Result<()> {
     match HASH_TX.get() {
         Some(channel) => {
-            println!("sending command to hashmap for key {}", key);
+            trace!("sending command to hashmap for key {}", key);
             match channel.send((command, key, optional_channel, optional_data)).await {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
@@ -164,7 +166,7 @@ async fn cp_del_flow(key: String) -> Result<()> {
 
 /// Received data from CP
 async fn cp_data_rcvd(key: String, data: String) -> Result<()> {
-    println!("Data {} received from CP for flow {}", data, key);
+    trace!("Data {} received from CP for flow {}", data, key);
     return cp_access_hashmap(HashmapCommand::Send, key, None, Some(data)).await;
 }
 
@@ -173,7 +175,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 
     let requests = async_stream::stream! {
         loop {
-            println!("request for CP");
+            trace!("request for CP");
             yield grpc_rx.recv().await.unwrap();
         }
     };
@@ -185,29 +187,29 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
             loop {
                 match inbound.message().await {
                     Ok(option) => {
-                        println!("received from CP");
+                        trace!("received from CP");
                         match option {
                             Some(message) => {
-                                println!("Message {} received from CP", message.event);
+                                trace!("Message {} received from CP", message.event);
                                 match Event::from_i32(message.event) {
                                     Some(Event::Add) => {
-                                        println!("add from CP");
+                                        trace!("add from CP");
                                         match cp_add_flow(message.local, message.remote).await {
-                                            Ok(()) => println!("CP added flow"),
+                                            Ok(()) => debug!("CP added flow"),
                                             Err(e) => return Err(e),
                                         }
                                     },
                                     Some(Event::Delete) => {
-                                        println!("delete from CP");
+                                        trace!("delete from CP");
                                         match cp_del_flow(format!("{}{}", message.local, message.remote)).await {
-                                            Ok(()) => println!("CP deleted flow"),
+                                            Ok(()) => debug!("CP deleted flow"),
                                             Err(e) => return Err(e),
                                         }
                                     },
                                     Some(Event::Data) => {
-                                        println!("data from CP");
+                                        trace!("data from CP");
                                         match cp_data_rcvd(format!("{} {}", message.local, message.remote), message.data).await {
-                                            Ok(()) => println!("data received from CP"),
+                                            Ok(()) => debug!("data received from CP"),
                                             Err(e) => return Err(e),
                                         }
                                     },
@@ -228,6 +230,8 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 /// CP connector
 pub async fn cp_connector(socket: String) -> Result<()> {
 
+    debug!("connecting to gRPC CP");
+    
     // Connect to gRPC CP
     match MsmControlPlaneClient::connect(socket).await {
 
