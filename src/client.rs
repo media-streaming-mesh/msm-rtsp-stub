@@ -15,6 +15,7 @@
  */
 
 use crate::cp;
+use crate::dp;
 
 use log::{debug, error, trace};
 
@@ -107,10 +108,12 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
         // read from client
         match client_read(&reader).await {
             Ok((interleaved, data)) => {
-                if interleaved {    
-                    // Send data to DP proxy over UDP
-                    // need to convert from string to bytes somewhere...
-                    // match send_interleaved(dp_handle, data) {}
+                if interleaved {
+                    trace!("Sending data to DP");
+                    match dp::dp_send(data).await {
+                        Ok(written) => trace!("Sent {} bytes to DP", written),
+                        Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
+                    }
                 }
                 else {
                     match String::from_utf8(data) {

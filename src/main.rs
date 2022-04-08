@@ -16,9 +16,10 @@
 
 use msm_rtsp_stub::client::client_listener;
 use msm_rtsp_stub::cp::cp_connector;
+use msm_rtsp_stub::dp::dp_init;
 
 use futures::future::join_all;
-use log::{info, error};
+use log::{trace, info, error};
 
 use simple_logger;
 
@@ -44,6 +45,11 @@ async fn main() {
             Err(e) => error!("Error: {}", e),
         }
     }));
+
+    match dp_init().await {
+        Ok(()) => trace!("Connected to DP"),
+        Err(e) => error!("Error connecting to DP: {}", e),
+    }
 
     // wait for all green threads to finish (not gonna happen)
     join_all(handles).await;
