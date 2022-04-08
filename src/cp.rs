@@ -83,7 +83,7 @@ pub async fn cp_deregister(local_addr: String, remote_addr: String) -> Result<()
 }
 
 /// Send data message to CP
-pub async fn cp_data(local_addr: String, remote_addr: String, message_string: String) -> Result<()> {
+pub async fn cp_send(local_addr: String, remote_addr: String, message_string: String) -> Result<()> {
     let message = Message {
         event: Event::Data as i32,
         local: local_addr,

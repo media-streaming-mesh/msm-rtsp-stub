@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-use crate::cp;
-use crate::dp;
+use crate::cp::cp_register;
+use crate::cp::cp_deregister;
+use crate::cp::cp_send;
+use crate::dp::dp_send;
 
 use log::{debug, error, trace};
 
@@ -110,7 +112,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
             Ok((interleaved, data)) => {
                 if interleaved {
                     trace!("Sending data to DP");
-                    match dp::dp_send(data).await {
+                    match dp_send(data).await {
                         Ok(written) => trace!("Sent {} bytes to DP", written),
                         Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
                     }
@@ -119,7 +121,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                     match String::from_utf8(data) {
                         Ok(request_string) => {
                             trace!("Client request is {}", request_string);
-                            match cp::cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
+                            match cp_send(local_addr.clone(), remote_addr.clone(), request_string).await {
                                 Ok(()) => debug!("written to CP"),
                                 Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
                             }
@@ -155,7 +157,7 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
     let (tx, rx) = mpsc::channel::<String>(5);
 
     // register client with CP
-    match cp::cp_register(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
+    match cp_register(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
         Ok(()) => {
             let mut hold_err = false;
             let mut held_err = Error::new(ErrorKind::Other, "not an error - yet!");
@@ -170,7 +172,7 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
             }   
     
             // delete client from CP
-            match cp::cp_deregister(local_addr.clone(), remote_addr.clone()).await {
+            match cp_deregister(local_addr.clone(), remote_addr.clone()).await {
                 Ok(()) => {
                     if hold_err {
                         return Err(held_err);
