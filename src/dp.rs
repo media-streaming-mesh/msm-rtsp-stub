@@ -17,15 +17,16 @@
 use log::trace;
 
 use std::io::{Error, ErrorKind, Result};
+use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
 use once_cell::sync::OnceCell;
 static RTP_TX: OnceCell<UdpSocket> = OnceCell::new();
 
 /// init the UDP socket to send to DP
-pub async fn dp_init() -> Result <()> {
+pub async fn dp_init(remote: SocketAddr) -> Result <()> {
     let socket = UdpSocket::bind("127.0.0.1:12345").await?;
-    socket.connect("127.0.0.1:8050").await?;
+    socket.connect(remote).await?;
 
     match RTP_TX.set(socket) {
         Ok(()) => return Ok(()), 

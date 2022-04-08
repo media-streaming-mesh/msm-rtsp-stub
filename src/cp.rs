@@ -20,6 +20,7 @@ pub mod msm_cp {
 
 use crate::client::client_outbound;
 
+use http::Uri;
 use log::{debug, trace, warn};
 
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
@@ -228,12 +229,12 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 }
 
 /// CP connector
-pub async fn cp_connector(socket: String) -> Result<()> {
+pub async fn cp_connector(uri: Uri) -> Result<()> {
 
     debug!("connecting to gRPC CP");
     
     // Connect to gRPC CP
-    match MsmControlPlaneClient::connect(socket).await {
+    match MsmControlPlaneClient::connect(uri).await {
 
         Ok(mut handle) => {
 
