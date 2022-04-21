@@ -69,7 +69,7 @@ pub async fn cp_add(tx: mpsc::Sender::<String>, local_addr: String, remote_addr:
 
     match GRPC_TX.get().unwrap().send(message).await {
         Ok(()) => {
-            match HASH_TX.get().unwrap().send((HashmapCommand::Insert, format!("{} {}", local_addr, remote_addr), Some(tx), None)).await {
+            match cp_access_hashmap(HashmapCommand::Insert, format!("{} {}", local_addr, remote_addr), Some(tx), None).await {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
             }
@@ -89,7 +89,7 @@ pub async fn cp_delete(local_addr: String, remote_addr: String) -> Result<()> {
 
     match GRPC_TX.get().unwrap().send(message).await {
         Ok(()) => {
-            match HASH_TX.get().unwrap().send((HashmapCommand::Remove,  format!("{} {}", local_addr, remote_addr), None, None)).await {
+            match cp_access_hashmap(HashmapCommand::Remove, format!("{} {}", local_addr, remote_addr), None, None).await {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
             }
