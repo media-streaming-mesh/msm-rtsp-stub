@@ -165,12 +165,12 @@ async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channe
 }
 
 /// Add flow from CP
-async fn cp_add_flow(local_addr: String, remote_addr: String) -> Result<()> {
+async fn cp_add_flow(remote_addr: String) -> Result<()> {
     // Create channel to send CP messages to client
     let (tx, rx) = mpsc::channel::<String>(5);
 
-    match client_outbound(local_addr.clone(), remote_addr.clone(), rx).await {
-        Ok(()) => return cp_access_hashmap(HashmapCommand::Insert, format!("{} {}", local_addr.clone(), remote_addr.clone()), Some(tx.clone()), None).await,
+    match client_outbound(remote_addr.clone(), rx).await {
+        Ok(local_addr) => return cp_access_hashmap(HashmapCommand::Insert, format!("{} {}", local_addr, remote_addr.clone()), Some(tx.clone()), None).await,
         Err(e) => return Err(e),
     }
 }
@@ -214,7 +214,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                     },
                                     Some(Event::Add) => {
                                         trace!("add from CP");
-                                        match cp_add_flow(message.local, message.remote).await {
+                                        match cp_add_flow(message.remote).await {
                                             Ok(()) => debug!("CP added flow"),
                                             Err(e) => return Err(e),
                                         }

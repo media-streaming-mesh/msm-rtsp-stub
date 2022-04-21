@@ -146,9 +146,19 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
 }
 
 /// manage outbound client connection from beginning to end
-pub async fn client_outbound(local_addr: String, remote_addr: String, rx: mpsc::Receiver<String>) -> Result<()> { 
+pub async fn client_outbound(remote_addr: String, rx: mpsc::Receiver<String>) -> Result<String> { 
     match TcpStream::connect(remote_addr.clone()).await {
-        Ok(client_stream) => return client_handler(local_addr.clone(), remote_addr.clone(), client_stream, rx).await,
+        Ok(client_stream) => {
+            let local_addr = client_stream.local_addr().unwrap().to_string();
+            let local_param = local_addr.clone();
+            tokio::spawn(async move {
+                match client_handler(local_param, remote_addr, client_stream, rx).await {
+                    Ok(()) => debug!("Disconnected"),
+                    Err(e) => error!("Error: {}", e),
+                }
+            });
+            return Ok(local_addr)
+        },
         Err(e) => return Err(e),
     }
 }
