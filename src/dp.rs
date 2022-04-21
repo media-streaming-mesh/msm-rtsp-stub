@@ -25,12 +25,19 @@ static RTP_TX: OnceCell<UdpSocket> = OnceCell::new();
 
 /// init the UDP socket to send to DP
 pub async fn dp_init(remote: SocketAddr) -> Result <()> {
-    let socket = UdpSocket::bind("127.0.0.1:12345").await?;
-    socket.connect(remote).await?;
-
-    match RTP_TX.set(socket) {
-        Ok(()) => return Ok(()), 
-        _ => return Err(Error::new(ErrorKind::AlreadyExists, "gRPC OnceCell already set")),
+    match UdpSocket::bind("127.0.0.1:12345").await {
+        Ok(socket) => {
+            match socket.connect(remote).await {
+                Ok(()) => {
+                    match RTP_TX.set(socket) {
+                        Ok(()) => return Ok(()), 
+                        _ => return Err(Error::new(ErrorKind::AlreadyExists, "gRPC OnceCell already set")),
+                    }                    
+                },
+                Err(e) => return Err(e.into()),
+            }
+        },
+        Err(e) => return Err(e.into()),
     }
 }
 
@@ -39,14 +46,18 @@ pub async fn dp_send(data: Vec<u8>) -> Result <usize> {
     match RTP_TX.get() {
         Some(socket) => {
             loop {
-                socket.writable().await?;
+                match socket.writable().await {
+                    Ok(()) => {
 
-                trace!("sending UDP data to DP");
+                        trace!("sending UDP data to DP");
                 
-                match socket.try_send(&data) {
-                    Ok(written) => return Ok(written),
-                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue,
-                    Err(e) => return Err(e),
+                        match socket.try_send(&data) {
+                            Ok(written) => return Ok(written),
+                            Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue,
+                            Err(e) => return Err(e),
+                        }
+                    },
+                    Err(e) => return Err(e.into()),
                 }
             }
         },
