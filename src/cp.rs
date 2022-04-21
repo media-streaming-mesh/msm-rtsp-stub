@@ -170,7 +170,7 @@ async fn cp_add_flow(remote_addr: String) -> Result<()> {
     let (tx, rx) = mpsc::channel::<String>(5);
 
     match client_outbound(remote_addr.clone(), rx).await {
-        Ok(local_addr) => return cp_access_hashmap(HashmapCommand::Insert, format!("{} {}", local_addr, remote_addr.clone()), Some(tx.clone()), None).await,
+        Ok(local_addr) => return cp_add(tx, local_addr, remote_addr).await,
         Err(e) => return Err(e),
     }
 }
