@@ -36,6 +36,7 @@ use tonic::Request;
 use once_cell::sync::OnceCell;
 static GRPC_TX: OnceCell<mpsc::Sender<Message>> = OnceCell::new();
 static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Sender<String>>, Option<String>)>> = OnceCell::new();
+const CHANNEL_SIZE: usize = 5;
 
 enum HashmapCommand {
     Insert,
@@ -43,7 +44,7 @@ enum HashmapCommand {
     Send,
 }
 
-/// Send message to CP
+/// Queue message to send to CP
 pub async fn cp_send(message: Message) -> Result<()> {
     match GRPC_TX.get() {
         Some(channel) => {
@@ -174,9 +175,10 @@ async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channe
 /// Add flow from CP
 async fn cp_add_flow(remote_addr: String) -> Result<()> {
     // Create channel to send CP messages to client
-    let (tx, rx) = mpsc::channel::<String>(5);
+    let (tx, rx) = mpsc::channel::<String>(CHANNEL_SIZE);
 
     match client_outbound(remote_addr.clone(), rx).await {
+        // connected to client so add it to CP
         Ok(local_addr) => return cp_add(tx, local_addr, remote_addr).await,
         Err(e) => return Err(e),
     }
@@ -265,7 +267,7 @@ pub async fn cp_connector(uri: Uri) -> Result<()> {
         Ok(mut handle) => {
 
             // Now create channel to receive messages from CP functions
-            let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(5);
+            let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(CHANNEL_SIZE);
 
             // init the channel sender handle
             match GRPC_TX.set(grpc_tx) {
