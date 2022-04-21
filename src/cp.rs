@@ -43,6 +43,19 @@ enum HashmapCommand {
     Send,
 }
 
+/// Send message to CP
+pub async fn cp_send(message: Message) -> Result<()> {
+    match GRPC_TX.get() {
+        Some(channel) => {
+            match channel.send(message).await {
+                Ok(()) => return Ok(()),
+                Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
+            }
+        },
+        None => return Err(Error::new(ErrorKind::NotFound, "gRPC handle not initialised")),
+    }
+}
+
 /// Register stub at CP
 pub async fn cp_register() -> Result<()> {
     let message = Message {
@@ -52,10 +65,7 @@ pub async fn cp_register() -> Result<()> {
         data: String::new(),
     };
 
-    match GRPC_TX.get().unwrap().send(message).await {
-        Ok(()) => return Ok(()),
-        Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
-    }
+    return cp_send(message).await
 }
 
 /// Add client to CP
@@ -67,7 +77,7 @@ pub async fn cp_add(tx: mpsc::Sender::<String>, local_addr: String, remote_addr:
         data: String::new(),
     };
 
-    match GRPC_TX.get().unwrap().send(message).await {
+    match cp_send(message).await {
         Ok(()) => {
             match cp_access_hashmap(HashmapCommand::Insert, format!("{} {}", local_addr, remote_addr), Some(tx), None).await {
                 Ok(()) => return Ok(()),
@@ -87,7 +97,7 @@ pub async fn cp_delete(local_addr: String, remote_addr: String) -> Result<()> {
         data: String::new(),
     };
 
-    match GRPC_TX.get().unwrap().send(message).await {
+    match cp_send(message).await {
         Ok(()) => {
             match cp_access_hashmap(HashmapCommand::Remove, format!("{} {}", local_addr, remote_addr), None, None).await {
                 Ok(()) => return Ok(()),
@@ -99,7 +109,7 @@ pub async fn cp_delete(local_addr: String, remote_addr: String) -> Result<()> {
 }
 
 /// Send data message to CP
-pub async fn cp_send(local_addr: String, remote_addr: String, message_string: String) -> Result<()> {
+pub async fn cp_data(local_addr: String, remote_addr: String, message_string: String) -> Result<()> {
     let message = Message {
         event: Event::Data as i32,
         local: local_addr,
@@ -107,10 +117,7 @@ pub async fn cp_send(local_addr: String, remote_addr: String, message_string: St
         data: message_string,
     };
 
-    match GRPC_TX.get().unwrap().send(message).await {
-        Ok(()) => return Ok(()),
-        Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
-    }
+    return cp_send(message).await
 }
 
 /// hashmap owner
@@ -160,7 +167,7 @@ async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channe
                 Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
             }
         },
-        None => return Err(Error::new(ErrorKind::NotFound, "OnceCell not initlialised")),
+        None => return Err(Error::new(ErrorKind::NotFound, "hashmap handle not initlialised")),
     }
 }
 

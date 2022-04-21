@@ -16,7 +16,7 @@
 
 use crate::cp::cp_add;
 use crate::cp::cp_delete;
-use crate::cp::cp_send;
+use crate::cp::cp_data;
 use crate::dp::dp_send;
 
 use log::{debug, error, trace};
@@ -126,7 +126,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                             trace!("Client request is {}", request_string);
 
                             // Tell CP thread to send data to CP
-                            match cp_send(local_addr.clone(), remote_addr.clone(), request_string).await {
+                            match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
                                 Ok(()) => debug!("written to CP"),
                                 Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
                             }
