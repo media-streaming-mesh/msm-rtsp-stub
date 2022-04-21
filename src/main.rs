@@ -63,45 +63,50 @@ async fn main() {
     }
 
     // seemed like a reasonable choice at the time
-    simple_logger::init_with_level(level).unwrap();
-
-    match args.port {
-        Some(listen_port) => port = listen_port,
-        None => debug!("no valid port parameter given - using default"),
-    }
-
-    match args.control_plane {
-        Some(cp) => control_plane = cp,
-        None => debug!("no valid control_plane parameter given - using default"),
-    }
-
-    match args.data_plane {
-        Some(dp) => data_plane = dp,
-        None => debug!("no valid data_plane parameter given - using default"),
-    }
-
-    let mut handles = vec![];
-    // spawn a green thread for the client communication
-    handles.push(tokio::spawn(async move {
-        match client_listener(format!(":::{}", port).to_string()).await {
-            Ok(()) => info!("Disconnected!"),
-            Err(e) => error!("Error: {}", e),
+    match simple_logger::init_with_level(level) {
+        Ok(()) => {
+            match args.port {
+                Some(listen_port) => port = listen_port,
+                None => debug!("no valid port parameter given - using default"),
+            }
+        
+            match args.control_plane {
+                Some(cp) => control_plane = cp,
+                None => debug!("no valid control_plane parameter given - using default"),
+            }
+        
+            match args.data_plane {
+                Some(dp) => data_plane = dp,
+                None => debug!("no valid data_plane parameter given - using default"),
+            }
+        
+            let mut handles = vec![];
+            // spawn a green thread for the client communication
+            handles.push(tokio::spawn(async move {
+                match client_listener(format!(":::{}", port).to_string()).await {
+                    Ok(()) => info!("Disconnected!"),
+                    Err(e) => error!("Error: {}", e),
+                }
+            }));
+        
+            // spawn a green thread for the CP communication
+            handles.push(tokio::spawn(async move {
+                match cp_connector(control_plane).await {
+                    Ok(()) => info!("Disconnected!"),
+                    Err(e) => error!("Error: {}", e),
+                }
+            }));
+        
+            match dp_init(data_plane).await {
+                Ok(()) => trace!("Connected to DP"),
+                Err(e) => error!("Error connecting to DP: {}", e),
+            }
+        
+            // wait for all green threads to finish (not gonna happen)
+            join_all(handles).await;
+        },
+        Err(e) => {
+            error!("unable to log: {}", e.to_string());
         }
-    }));
-
-    // spawn a green thread for the CP communication
-    handles.push(tokio::spawn(async move {
-        match cp_connector(control_plane).await {
-            Ok(()) => info!("Disconnected!"),
-            Err(e) => error!("Error: {}", e),
-        }
-    }));
-
-    match dp_init(data_plane).await {
-        Ok(()) => trace!("Connected to DP"),
-        Err(e) => error!("Error connecting to DP: {}", e),
     }
-
-    // wait for all green threads to finish (not gonna happen)
-    join_all(handles).await;
 }

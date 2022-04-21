@@ -149,15 +149,20 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
 pub async fn client_outbound(remote_addr: String, rx: mpsc::Receiver<String>) -> Result<String> { 
     match TcpStream::connect(remote_addr.clone()).await {
         Ok(client_stream) => {
-            let local_addr = client_stream.local_addr().unwrap().to_string();
-            let local_param = local_addr.clone();
-            tokio::spawn(async move {
-                match client_handler(local_param, remote_addr, client_stream, rx).await {
-                    Ok(()) => debug!("Disconnected"),
-                    Err(e) => error!("Error: {}", e),
-                }
-            });
-            return Ok(local_addr)
+            match client_stream.local_addr() {
+                Ok(address) => {
+                    let local_addr = address.to_string();
+                    tokio::spawn(async move {
+                        match client_handler(local_addr, remote_addr, client_stream, rx).await {
+                            Ok(()) => debug!("Disconnected"),
+                            Err(e) => error!("Error: {}", e),
+                        }
+                    });
+
+                    return Ok(address.to_string())
+                },
+                Err(e) => return Err(Error::new(ErrorKind::AddrNotAvailable, e.to_string())),
+            }
         },
         Err(e) => return Err(e),
     }

@@ -126,34 +126,56 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
     let mut channels = HashMap::<String, mpsc::Sender<String>>::new();
 
     loop {
-        let (command, key, optional_value, optional_data) = chan_rx.recv().await.unwrap();
-        trace!("hashmap key is {}", key);
-        match command {
-            HashmapCommand::Insert => {
-                match channels.insert(key.clone(), optional_value.unwrap()) {
-                    Some(_value) => { warn!("key {} already present!", key) },
-                    None => { debug!("key {} added", key) },
-                }
-            },
-            HashmapCommand::Remove => {
-                match channels.remove(&key) {
-                    Some(_value) => { debug!("key {} removed", key) },
-                    None => { warn!("key {} not present!", key) },
-                }
-            },
-            HashmapCommand::Send => {
-                trace!("sending data to key {}", key);
-                match channels.get(&key) {
-                    Some(value_ref) => { 
-                        trace!("found channel for key {}",  key);
-                        match value_ref.send(optional_data.unwrap()).await {
-                            Ok(()) => { debug!("sent data to channel") },
-                            Err(_e) => { warn!("unable to send data for key {}", key) },
+        match chan_rx.recv().await {
+            Some((command, key, optional_value, optional_data)) => {
+                match command {
+                    HashmapCommand::Insert => {
+                        match optional_value {
+                            Some(value) => {
+                                match channels.insert(key.clone(), value) {
+                                    Some(_value) => { warn!("key {} already present!", key) },
+                                    None => { debug!("key {} added", key) },
+                                }
+                            },
+                            None => {
+                                error!("no value sent with hashmap insert");
+                                return
+                            },
                         }
                     },
-                    None => { warn!("key {} not present!", key) },
+                    HashmapCommand::Remove => {
+                        match channels.remove(&key) {
+                            Some(_value) => { debug!("key {} removed", key) },
+                            None => { warn!("key {} not present!", key) },
+                        }
+                    },
+                    HashmapCommand::Send => {
+                        trace!("sending data to key {}", key);
+                        match channels.get(&key) {
+                            Some(value_ref) => { 
+                                trace!("found channel for key {}",  key);
+                                match optional_data {
+                                    Some(data) => {
+                                        match value_ref.send(data).await {
+                                            Ok(()) => { debug!("sent data to channel") },
+                                            Err(_e) => { warn!("unable to send data for key {}", key) },
+                                        }
+                                    },
+                                    None => {
+                                        error!("no data for hashmap send");
+                                        return
+                                    },
+                                }
+                            },
+                            None => { warn!("key {} not present!", key) },
+                        }
+                    },
                 }
             },
+            None => {
+                error!("hashmap channel closed!");
+                return
+            }
         }
     }
 }
@@ -201,7 +223,13 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
     let requests = async_stream::stream! {
         loop {
             trace!("request for CP");
-            yield grpc_rx.recv().await.unwrap();
+            match grpc_rx.recv().await {
+                Some(message) => yield(message),
+                None => {
+                    error!("no message received from CP");
+                    return
+                },
+            }
         }
     };
         
