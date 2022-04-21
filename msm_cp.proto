@@ -21,9 +21,10 @@ package msm_cp;
 option go_package = "github.com/media-streaming-mesh/msm-cp/api/v1alpha1/msm_cp;msm_cp";
 
 enum Event {
-	ADD = 0;
-	DELETE = 1;
-	DATA = 2;
+	REGISTER = 0;
+	ADD = 1;
+	DELETE = 2;
+	DATA = 3;
 }
 
 service MsmControlPlane {

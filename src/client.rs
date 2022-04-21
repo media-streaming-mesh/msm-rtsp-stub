@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-use crate::cp::cp_register;
-use crate::cp::cp_deregister;
+use crate::cp::cp_add;
+use crate::cp::cp_delete;
 use crate::cp::cp_send;
 use crate::dp::dp_send;
 
@@ -92,11 +92,13 @@ async fn client_cp_recv(mut rx: mpsc::Receiver<String>, writer: OwnedWriteHalf) 
 /// handle client connection
 async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream, rx: mpsc::Receiver<String>) -> Result<()> {
 
-    // split the client socket into sender/receiver
+    // Need socket to flush messages immediately 
     client_stream.set_nodelay(true)?;
+
+    // split socket into sender/receiver so can hand sender to separate thread
     let (reader, writer) = client_stream.into_split();
 
-    // Spawn a thread to receive the messages
+    // Spawn thread to receive messages from CP and send to client
     tokio::spawn(async move {
         match client_cp_recv(rx, writer).await {
             Ok(written) => {
@@ -107,7 +109,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
     });
 
     loop {
-        // read from client
+        // read from client socket
         match client_read(&reader).await {
             Ok((interleaved, data)) => {
                 if interleaved {
@@ -118,9 +120,12 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                     }
                 }
                 else {
+                    // this is control plane data from client
                     match String::from_utf8(data) {
                         Ok(request_string) => {
                             trace!("Client request is {}", request_string);
+
+                            // Tell CP thread to send data to CP
                             match cp_send(local_addr.clone(), remote_addr.clone(), request_string).await {
                                 Ok(()) => debug!("written to CP"),
                                 Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
@@ -153,16 +158,17 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
     let local_addr = client_stream.local_addr()?.to_string();
     let remote_addr = client_stream.peer_addr()?.to_string();
 
-    // Create channel to receive messages from CP
+    // Create channel to receive messages from CP thread
     let (tx, rx) = mpsc::channel::<String>(5);
 
-    // register client with CP
-    match cp_register(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
+    // Tell CP thread to add client to CP and to hashmap
+    match cp_add(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
         Ok(()) => {
             let mut hold_err = false;
             let mut held_err = Error::new(ErrorKind::Other, "not an error - yet!");
 
             // now process messages to/from the client
+            // will only terminate when client closes or error occurs
             match client_handler(local_addr.clone(), remote_addr.clone(), client_stream, rx).await {
                 Ok(()) => {},
                 Err(e) => { 
@@ -171,8 +177,8 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
                 },
             }   
     
-            // delete client from CP
-            match cp_deregister(local_addr.clone(), remote_addr.clone()).await {
+            // Tell CP thread to delete client from CP and from hashmap
+            match cp_delete(local_addr.clone(), remote_addr.clone()).await {
                 Ok(()) => {
                     if hold_err {
                         return Err(held_err);

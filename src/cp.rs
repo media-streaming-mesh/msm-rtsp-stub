@@ -21,7 +21,7 @@ pub mod msm_cp {
 use crate::client::client_outbound;
 
 use http::Uri;
-use log::{debug, trace, warn};
+use log::{debug, trace, warn, error};
 
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
 use self::msm_cp::{Event, Message};
@@ -43,8 +43,23 @@ enum HashmapCommand {
     Send,
 }
 
-/// Register client at CP
-pub async fn cp_register(tx: mpsc::Sender::<String>, local_addr: String, remote_addr: String) -> Result<()> {
+/// Register stub at CP
+pub async fn cp_register() -> Result<()> {
+    let message = Message {
+        event: Event::Register as i32,
+        local: String::new(),
+        remote: String::new(),
+        data: String::new(),
+    };
+
+    match GRPC_TX.get().unwrap().send(message).await {
+        Ok(()) => return Ok(()),
+        Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
+    }
+}
+
+/// Add client to CP
+pub async fn cp_add(tx: mpsc::Sender::<String>, local_addr: String, remote_addr: String) -> Result<()> {
     let message = Message {
         event: Event::Add as i32,
         local: local_addr.clone(),
@@ -63,8 +78,8 @@ pub async fn cp_register(tx: mpsc::Sender::<String>, local_addr: String, remote_
     }
 }
 
-/// De-register client from CP
-pub async fn cp_deregister(local_addr: String, remote_addr: String) -> Result<()> {
+/// Delete client from CP
+pub async fn cp_delete(local_addr: String, remote_addr: String) -> Result<()> {
     let message = Message {
         event: Event::Delete as i32,
         local: local_addr.clone(),
@@ -193,6 +208,10 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                             Some(message) => {
                                 trace!("Message {} received from CP", message.event);
                                 match Event::from_i32(message.event) {
+                                    Some(Event::Register) => {
+                                        error!("register from CP!");
+                                        return Err(Error::new(ErrorKind::InvalidInput, "Invalid register message from CP"));
+                                    },
                                     Some(Event::Add) => {
                                         trace!("add from CP");
                                         match cp_add_flow(message.local, message.remote).await {
@@ -245,20 +264,27 @@ pub async fn cp_connector(uri: Uri) -> Result<()> {
             match GRPC_TX.set(grpc_tx) {
                 Ok(()) => {
 
-                    // create channel to access hash-map entries
-                    let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<String>>, Option<String>)>(1);
-
-                    match HASH_TX.set(hash_tx) {
+                    // Now register the stub with the CP
+                    match cp_register().await {
                         Ok(()) => {
-                            // start the hash-map task
-                            tokio::spawn(async move { cp_hashmap(hash_rx).await });
 
-                            // now start handling messages
-                            return cp_stream(&mut handle, grpc_rx).await
+                            // create channel to access hash-map entries
+                            let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<String>>, Option<String>)>(1);
+
+                            match HASH_TX.set(hash_tx) {
+                                Ok(()) => {
+                                    // start the hash-map task
+                                    tokio::spawn(async move { cp_hashmap(hash_rx).await });
+
+                                    // now start handling messages
+                                    return cp_stream(&mut handle, grpc_rx).await
+                                },
+                                _ => return Err(Error::new(ErrorKind::AlreadyExists, "Hashmap OnceCell already set")),
+                            }
                         },
-                        _ => return Err(Error::new(ErrorKind::AlreadyExists, "Hashmap OnceCell already set")),
+                        Err(e) => return Err(e),
                     }
-                }
+                },
                 _ => return Err(Error::new(ErrorKind::AlreadyExists, "gRPC OnceCell already set")),
             }
         },
