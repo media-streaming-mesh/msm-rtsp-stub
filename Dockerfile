@@ -24,8 +24,5 @@ WORKDIR /msm-rtsp-stub
 # Copy our build
 COPY --from=builder /msm-rtsp-stub/target/release/msm_rtsp_stub ./
 
-# Use an unprivileged user.
-USER stub:stub 
-
 CMD ["/msm-rtsp-stub/msm_rtsp_stub"]
 
