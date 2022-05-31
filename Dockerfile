@@ -3,8 +3,6 @@
 ####################################################################################################
 FROM rust:latest AS builder
 
-RUN rustup target add x86_64-unknown-linux-musl
-RUN apt update && apt install -y musl-tools musl-dev
 RUN update-ca-certificates
 
 WORKDIR /msm-rtsp-stub
@@ -17,12 +15,12 @@ RUN strip /msm-rtsp-stub/target/release/msm_rtsp_stub
 ####################################################################################################
 ## Final image
 ####################################################################################################
-FROM scratch
+FROM ubuntu
 
-WORKDIR /msm-rtsp-stub
+WORKDIR /
 
 # Copy our build
-COPY --from=builder /msm-rtsp-stub/target/release/msm_rtsp_stub ./
+COPY --from=builder /msm-rtsp-stub/target/release/msm_rtsp_stub .
 
-CMD ["/msm-rtsp-stub/msm_rtsp_stub"]
+ENTRYPOINT ["/msm_rtsp_stub", "--control-plane", "http://10.96.3.1:9000"]
 
