@@ -3,14 +3,15 @@
 ####################################################################################################
 FROM rust:latest AS builder
 
+RUN rustup default nightly && rustup update
+
 RUN update-ca-certificates
 
 WORKDIR /msm-rtsp-stub
 
 COPY ./ .
 
-RUN cargo build --release 
-RUN strip /msm-rtsp-stub/target/release/msm_rtsp_stub 
+RUN cargo +nightly build
 
 ####################################################################################################
 ## Final image
@@ -20,7 +21,7 @@ FROM ubuntu
 WORKDIR /
 
 # Copy our build
-COPY --from=builder /msm-rtsp-stub/target/release/msm_rtsp_stub .
+COPY --from=builder /msm-rtsp-stub/target/debug/msm_rtsp_stub .
 
 ENTRYPOINT ["/msm_rtsp_stub", "--level", "DEBUG", "--control-plane", "http://10.96.3.1:9000"]
 
