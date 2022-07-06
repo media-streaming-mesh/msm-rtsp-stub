@@ -147,11 +147,15 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                             }
                         }
                     },
-                    Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
+                    Err(ref e) if e.kind() == ErrorKind::ConnectionReset => {
+                        debug!("connection reset");
+                        break
+                    }
                     Err(e) => return Err(e.into()),
                 }
             }
 
+            trace!("leaving client handler");
             return Ok(())
         },
         Err(e) => {
