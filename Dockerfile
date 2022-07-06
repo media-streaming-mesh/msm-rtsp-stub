@@ -22,5 +22,5 @@ WORKDIR /
 # Copy our build
 COPY --from=builder /msm-rtsp-stub/target/release/msm_rtsp_stub .
 
-ENTRYPOINT ["/msm_rtsp_stub", "--control-plane", "http://10.96.3.1:9000"]
+ENTRYPOINT ["/msm_rtsp_stub", "--level", "DEBUG", "--control-plane", "http://10.96.3.1:9000"]
 
