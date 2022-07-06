@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:experimental
+
 ####################################################################################################
 ## Builder
 ####################################################################################################
@@ -11,7 +13,9 @@ WORKDIR /msm-rtsp-stub
 
 COPY ./ .
 
-RUN cargo +nightly build
+RUN	--mount=type=cache,target=/usr/local/cargo/registry \
+	--mount=type=cache,target=/msm-rtsp-stub/target \ 
+	cargo +nightly build
 
 ####################################################################################################
 ## Final image
