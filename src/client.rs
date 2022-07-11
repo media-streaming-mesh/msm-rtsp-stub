@@ -112,7 +112,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
             tokio::spawn(async move {
                 match client_cp_recv(rx, writer).await {
                     Ok(written) => {
-                        debug!("Disconnected: wrote {} bytes", written);
+                        debug!("Disconnected: wrote total of {} bytes back to client", written);
                     },
                     Err(e) => error!("Error: {}", e),
                 }
