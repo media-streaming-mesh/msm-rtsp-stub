@@ -25,10 +25,10 @@ static RTP_TX: OnceCell<UdpSocket> = OnceCell::new();
 static RTCP_TX: OnceCell<UdpSocket> = OnceCell::new();
 
 /// init the UDP sockets to send to DP
-pub async fn dp_init(remote: SocketAddr) -> Result <()> {
+pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
     match UdpSocket::bind("127.0.0.1:8050").await {
         Ok(socket) => {
-            match socket.connect(remote).await {
+            match socket.connect(proxy_rtp).await {
                 Ok(()) => {
                     match RTP_TX.set(socket) {
                         Ok(()) => trace!("Created RTP DP socket"), 
@@ -41,9 +41,11 @@ pub async fn dp_init(remote: SocketAddr) -> Result <()> {
         Err(e) => return Err(e.into()),
     }
 
+    let proxy_rtcp = SocketAddr::new(proxy_rtp.ip(), proxy_rtp.port()+1);
+
     match UdpSocket::bind("127.0.0.1:8051").await {
         Ok(socket) => {
-            match socket.connect(remote).await {
+            match socket.connect(proxy_rtcp).await {
                 Ok(()) => {
                     match RTCP_TX.set(socket) {
                         Ok(()) => {
