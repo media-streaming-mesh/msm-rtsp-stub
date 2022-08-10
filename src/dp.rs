@@ -67,6 +67,9 @@ pub async fn dp_demux(data: Vec<u8>) -> Result <usize> {
     if data.len() > 3 {
         let channel = data[0].into();
         let length = ((data[1] as u16) << 8 | data[2] as u16).into();
+        trace!("Channel is {}", channel);
+        trace!("Length is {}", length);
+        trace!("data.len is {}", data.len());
         if data.len() == length + 3 {
             return dp_send(data[3..length].to_vec(), channel).await
         }

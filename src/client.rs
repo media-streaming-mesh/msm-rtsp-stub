@@ -33,7 +33,7 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, Vec<u8>)> {
         // wait until we can read from the stream
         match reader.readable().await {
             Ok(()) => {
-                let mut buf = [0u8; 4096];
+                let mut buf = [0u8; 65536];
         
                 match reader.try_read(&mut buf) {
                     Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
