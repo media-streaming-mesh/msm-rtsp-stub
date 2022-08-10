@@ -25,7 +25,7 @@ static RTP_TX: OnceCell<UdpSocket> = OnceCell::new();
 
 /// init the UDP socket to send to DP
 pub async fn dp_init(remote: SocketAddr) -> Result <()> {
-    match UdpSocket::bind("127.0.0.1:12345").await {
+    match UdpSocket::bind("127.0.0.1:8050").await {
         Ok(socket) => {
             match socket.connect(remote).await {
                 Ok(()) => {
