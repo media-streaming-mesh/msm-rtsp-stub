@@ -17,7 +17,7 @@
 use crate::cp::cp_add;
 use crate::cp::cp_delete;
 use crate::cp::cp_data;
-use crate::dp::dp_send;
+use crate::dp::dp_demux;
 
 use log::{debug, error, trace};
 
@@ -124,7 +124,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                     Ok((interleaved, data)) => {
                         if interleaved {
                             trace!("Sending data to DP");
-                            match dp_send(data).await {
+                            match dp_demux(data).await {
                                 Ok(written) => trace!("Sent {} bytes to DP", written),
                                 Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
                             }
