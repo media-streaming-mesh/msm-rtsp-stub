@@ -30,6 +30,7 @@ simple_logger = "2.1.0"
 tokio = { version = "1.8.2", features = ["rt"] }
 tonic = "0.6.2"
 void = "1.0.2"
+envmnt = "*"
 
 [build-dependencies]
 tonic-build = { version = "0.6.2", default_features = false, features = ["transport", "prost"] }

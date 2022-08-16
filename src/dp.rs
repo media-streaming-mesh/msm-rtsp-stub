@@ -26,12 +26,17 @@ static RTCP_TX: OnceCell<UdpSocket> = OnceCell::new();
 
 /// init the UDP sockets to send to DP
 pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
-    match UdpSocket::bind("127.0.0.1:8050").await {
+
+    trace!("RTP proxy is {}", proxy_rtp);
+
+    match UdpSocket::bind("0.0.0.0:8050").await {
         Ok(socket) => {
+            trace!("bound RTP listen socket");
             match socket.connect(proxy_rtp).await {
                 Ok(()) => {
+                    trace!("connected to proxy");
                     match RTP_TX.set(socket) {
-                        Ok(()) => trace!("Created RTP DP socket"), 
+                        Ok(()) => trace!("connected RTP DP socket"), 
                         _ => return Err(Error::new(ErrorKind::AlreadyExists, "RTP OnceCell already set")),
                     }                    
                 },
@@ -43,16 +48,19 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 
     let proxy_rtcp = SocketAddr::new(proxy_rtp.ip(), proxy_rtp.port()+1);
 
-    match UdpSocket::bind("127.0.0.1:8051").await {
+    trace!("RTCP proxy is {}", proxy_rtcp);
+
+    match UdpSocket::bind("0.0.0.0:8051").await {
         Ok(socket) => {
+            trace!("bound RTCP listen socket");
             match socket.connect(proxy_rtcp).await {
                 Ok(()) => {
                     match RTCP_TX.set(socket) {
                         Ok(()) => {
-                            trace!("Created RTCP DP socket");
+                            trace!("connected RTCP DP socket");
                             return Ok(())
                         },
-                        _ => return Err(Error::new(ErrorKind::AlreadyExists, "RTP OnceCell already set")),
+                        _ => return Err(Error::new(ErrorKind::AlreadyExists, "RTCP OnceCell already set")),
                     }
                 },
                 Err(e) => return Err(e.into()),
