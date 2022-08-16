@@ -38,11 +38,11 @@ async fn main() {
             let rtp_port = envmnt::get_u16("RTP_PROXY_PORT", 8050);
             let rtsp_port = envmnt::get_u16("RTSP_PROXY_PORT", 8554);
             
-            match IpAddr::from_str(&envmnt::get_or("RTP_DATA_PLANE_IP", "127.0.0.1")) {
+            match IpAddr::from_str(&envmnt::get_or("MSM_DATA_PLANE", "127.0.0.1")) {
                 Ok(data_plane_ip) => {
                     let data_plane = SocketAddr::new(data_plane_ip, rtp_port);
-
-                    match Uri::from_str(&envmnt::get_or("RTP_CONTROL_PLANE", "http://127.0.0.1:9000")) {
+                    
+                    match Uri::from_str(&envmnt::get_or("MSM_CONTROL_PLANE", "http://127.0.0.1:9000")) {
                         Ok(control_plane) => {
                             let mut handles = vec![];
                             // spawn a green thread for the client communication
