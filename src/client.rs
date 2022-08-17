@@ -28,7 +28,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc;
 
 /// read command from client
-async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, Vec<u8>)> {
+async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
     loop {
         // wait until we can read from the stream
         match reader.readable().await {
@@ -37,16 +37,7 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, Vec<u8>)> {
         
                 match reader.try_read(&mut buf) {
                     Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
-                    Ok(bytes_read) => {
-                        if buf[0] == 36 {
-                            debug!("RTP Data");
-                            return Ok((true, buf[1..bytes_read].to_vec()))
-                        }
-                        else {
-                            debug!("RTSP Command");
-                            return Ok((false, buf[..bytes_read].to_vec()))
-                        }
-                    },
+                    Ok(bytes_read) => return Ok(((buf[0] == 36), bytes_read, buf[..bytes_read].to_vec())),
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
                     Err(e) => return Err(e.into()),
                 }
@@ -121,10 +112,10 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
             loop {
                 // read from client socket
                 match client_read(&reader).await {
-                    Ok((interleaved, data)) => {
+                    Ok((interleaved, length, data)) => {
                         if interleaved {
                             trace!("Sending data to DP");
-                            match dp_demux(data).await {
+                            match dp_demux(length, data).await {
                                 Ok(written) => trace!("Sent {} bytes to DP", written),
                                 Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
                             }
