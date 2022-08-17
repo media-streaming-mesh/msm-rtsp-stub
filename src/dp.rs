@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use async_recursion::async_recursion;
+
 use log::trace;
 
 use std::io::{Error, ErrorKind, Result};
@@ -70,20 +72,36 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
     }
 }
 
-/// Demux DP packet
-pub async fn dp_demux(data: Vec<u8>) -> Result <usize> {
-    if data.len() > 3 {
-        let channel = data[0].into();
-        let length = ((data[1] as u16) << 8 | data[2] as u16).into();
+/// demux interleaved data
+#[async_recursion]
+pub async fn dp_demux(length: usize, data: Vec<u8>) -> Result <usize> {
+    if length > 4 {
+        let channel: usize = data[1].into();
+        let length_inside: usize = ((data[2] as u16) << 8 | data[3] as u16).into();
         trace!("Channel is {}", channel);
         trace!("Length is {}", length);
-        trace!("data.len is {}", data.len());
-        if data.len() == length + 3 {
-            return dp_send(data[3..length].to_vec(), channel).await
-        }
-        else
-        {
-            return Err(Error::new(ErrorKind::InvalidData, "Incorrect length in interleaved data"))
+        trace!("Length inside is {}", length_inside);
+    
+        // Send first (or only) RTP/RTCP data block 
+        match dp_send(data[4..length_inside+4].to_vec(), channel).await {
+            Ok(written) => {
+                trace!("wrote {} bytes to DP", written);
+                let next = written + 4;
+                let left = length - next;
+                if left > 0 {
+                    trace!("recursing...");
+                    // recursive call to demux will handle any remaining RTP/RTCP data blocks
+                    match dp_demux(left, data[(next)..].to_vec()).await {
+                        Ok(wrote) => return Ok(wrote+written),
+                        Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),  
+                    }
+                }
+                else {
+                    // All AOK
+                    return Ok(written)
+                }     
+            },
+            Err(e) => return Err(e),
         }
     }
     else {
@@ -91,7 +109,7 @@ pub async fn dp_demux(data: Vec<u8>) -> Result <usize> {
     }
 }
 
-/// Send packet over RTP
+/// Send RTP/RTCP UDP packet to the DP
 pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
     if channel == 0 {
         match RTP_TX.get() {
@@ -100,7 +118,7 @@ pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
                     match socket.writable().await {
                         Ok(()) => {
     
-                            trace!("sending UDP data to DP");
+                            trace!("sending RTP data to DP");
                     
                             match socket.try_send(&data) {
                                 Ok(written) => return Ok(written),
@@ -122,7 +140,7 @@ pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
                     match socket.writable().await {
                         Ok(()) => {
     
-                            trace!("sending UDP data to DP");
+                            trace!("sending RTCP data to DP");
                     
                             match socket.try_send(&data) {
                                 Ok(written) => return Ok(written),
