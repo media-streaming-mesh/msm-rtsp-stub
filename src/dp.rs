@@ -75,37 +75,37 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 /// demux interleaved data
 #[async_recursion]
 pub async fn dp_demux(length: usize, data: Vec<u8>) -> Result <usize> {
-    if length > 4 {
-        let channel: usize = data[1].into();
-        let length_inside: usize = ((data[2] as u16) << 8 | data[3] as u16).into();
-        trace!("Channel is {}", channel);
-        trace!("Length is {}", length);
-        trace!("Length inside is {}", length_inside);
-    
-        // Send first (or only) RTP/RTCP data block 
-        match dp_send(data[4..length_inside+4].to_vec(), channel).await {
-            Ok(written) => {
-                trace!("wrote {} bytes to DP", written);
-                let next = written + 4;
-                let left = length - next;
-                if left > 0 {
-                    trace!("recursing...");
-                    // recursive call to demux will handle any remaining RTP/RTCP data blocks
-                    match dp_demux(left, data[(next)..].to_vec()).await {
-                        Ok(wrote) => return Ok(wrote+written),
-                        Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),  
-                    }
-                }
-                else {
-                    // All AOK
-                    return Ok(written)
-                }     
-            },
-            Err(e) => return Err(e),
-        }
-    }
-    else {
+    if length < 4 {
         return Err(Error::new(ErrorKind::InvalidData, "Interleaved data too short"))
+    }
+
+    let channel: usize = data[1].into();
+    let length_inside: usize = ((data[2] as u16) << 8 | data[3] as u16).into();
+    
+    trace!("Channel is {}", channel);
+    trace!("Length is {}", length);
+    trace!("Length inside is {}", length_inside);
+
+    // Send first (or only) RTP/RTCP data block 
+    match dp_send(data[4..length_inside+4].to_vec(), channel).await {
+        Ok(written) => {
+            trace!("wrote {} bytes to DP", written);
+            let next = written + 4;
+            let left = length - next;
+            if left > 0 {
+                trace!("recursing...");
+                // recursive call to demux will handle any remaining RTP/RTCP data blocks
+                match dp_demux(left, data[next..].to_vec()).await {
+                    Ok(wrote) => return Ok(wrote+written),
+                    Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),  
+                }
+            }
+            else {
+                // All AOK
+                return Ok(written)
+            }     
+        },
+        Err(e) => return Err(e),
     }
 }
 
