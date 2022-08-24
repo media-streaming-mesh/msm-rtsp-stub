@@ -30,8 +30,8 @@ use envmnt;
 #[tokio::main (flavor="current_thread")]
 async fn main() {
 
-    // We prefer to use LOG_LVL rather than RUST_LOG
-    envmnt::set("RUST_LOG", envmnt::get_or("LOG_LVL", "WARN"));
+    // We prefer to use MSM_LOG_LVL rather than RUST_LOG
+    envmnt::set("RUST_LOG", envmnt::get_or("MSM_LOG_LVL", "WARN"));
 
     match simple_logger::init_with_env() {
         Ok(()) => {
