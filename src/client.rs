@@ -18,14 +18,20 @@ use crate::cp::cp_add;
 use crate::cp::cp_delete;
 use crate::cp::cp_data;
 use crate::dp::dp_demux;
+use crate::dp::dp_rtp_recv;
+use crate::dp::dp_rtcp_recv;
 
-use log::{debug, error, trace};
+use futures::future::join_all;
+
+use log::{debug, error, info, trace};
 
 use std::io::{Error, ErrorKind, Result};
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc;
+
+const CLIENT_CHANNEL_SIZE: usize = 5;
 
 /// read command from client
 async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
@@ -37,7 +43,7 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
         
                 match reader.try_read(&mut buf) {
                     Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
-                    Ok(bytes_read) => return Ok(((buf[0] == 36), bytes_read, buf[..bytes_read].to_vec())),
+                    Ok(bytes_read) => return Ok(((buf[0] == 0x24), bytes_read, buf[..bytes_read].to_vec())),
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
                     Err(e) => return Err(e.into()),
                 }
@@ -74,7 +80,7 @@ async fn client_write(writer: &OwnedWriteHalf, response: String) -> Result<usize
 }
 
 /// handle messages for client
-async fn client_cp_recv(mut rx: mpsc::Receiver<String>, writer: OwnedWriteHalf) -> Result<usize> {
+async fn client_writer(mut rx: mpsc::Receiver<String>, writer: OwnedWriteHalf) -> Result<usize> {
     let mut written_back = 0;
 
     while let Some(message) = rx.recv().await {
@@ -91,7 +97,7 @@ async fn client_cp_recv(mut rx: mpsc::Receiver<String>, writer: OwnedWriteHalf) 
 }
 
 /// handle client connection
-async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream, rx: mpsc::Receiver<String>) -> Result<()> {
+async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream) -> Result<()> {
 
     // Need socket to flush messages immediately 
     match client_stream.set_nodelay(true) {
@@ -99,55 +105,89 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
             // split socket into sender/receiver so can hand sender to separate thread
             let (reader, writer) = client_stream.into_split();
 
-            // Spawn thread to receive messages from CP and send to client
-            tokio::spawn(async move {
-                match client_cp_recv(rx, writer).await {
-                    Ok(written) => {
-                        debug!("Disconnected: wrote total of {} bytes back to client", written);
-                    },
-                    Err(e) => error!("Error: {}", e),
-                }
-            });
+            // Create channel to receive messages for client
+            let (tx, rx) = mpsc::channel::<String>(CLIENT_CHANNEL_SIZE);
 
-            loop {
-                // read from client socket
-                match client_read(&reader).await {
-                    Ok((interleaved, length, data)) => {
-                        if interleaved {
-                            trace!("Sending data to DP");
-                            match dp_demux(length, data).await {
-                                Ok(written) => trace!("Sent {} bytes to DP", written),
-                                Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
-                            }
+            match cp_add(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
+                Ok(()) => {
+                    let mut handles = vec![];
+                    let rtp_tx = tx.clone();
+                    let rtcp_tx = tx.clone();
+
+                    // Spawn thread to receive messages and send to client
+                    handles.push(tokio::spawn(async move {
+                        match client_writer(rx, writer).await {
+                            Ok(written) => {
+                                debug!("Disconnected: wrote total of {} bytes back to client", written);
+                            },
+                            Err(e) => error!("Error: {}", e),
                         }
-                        else {
-                            // this is control plane data from client
-                            match String::from_utf8(data) {
-                                Ok(request_string) => {
-                                    trace!("Client request is {}", request_string);
+                    }));
 
-                                    // Tell CP thread to send data to CP
-                                    match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
-                                        Ok(()) => debug!("written to CP"),
-                                        Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
+                    // need to listen for RTP/RTCP messages
+                    handles.push(tokio::spawn(async move {
+                        match dp_rtp_recv(rtp_tx).await {
+                            Ok(written) => info!("{} RTP bytes read", written),
+                            Err(e) => debug!("RTP read error {}", e.to_string()),
+                        }
+                    }));
+
+                    handles.push(tokio::spawn(async move {
+                        match dp_rtcp_recv(rtcp_tx).await {
+                            Ok(written) => info!("{} RTCP bytes read", written),
+                            Err(e) => debug!("RTCP read error {}", e.to_string()),
+                        }
+                    }));
+
+                    // now receive client messages until disconnect
+                    loop {
+                        match client_read(&reader).await {
+                            Ok((interleaved, length, data)) => {
+                                if interleaved {
+                                    trace!("Sending data to DP");
+                                    match dp_demux(length, data).await {
+                                        Ok(written) => trace!("Sent {} bytes to DP", written),
+                                        Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
                                     }
-                                },
-                                Err(e) => {
-                                    return Err(Error::new(ErrorKind::InvalidData, e))
-                                },
-                            }
-                        }
-                    },
-                    Err(ref e) if e.kind() == ErrorKind::ConnectionReset => {
-                        debug!("connection reset");
-                        break
-                    }
-                    Err(e) => return Err(e.into()),
-                }
-            }
+                                }
+                                else {
+                                    // this is control plane data from client
+                                    match String::from_utf8(data) {
+                                        Ok(request_string) => {
+                                            trace!("Client request is {}", request_string);
 
-            trace!("leaving client handler");
-            return Ok(())
+                                            // Tell CP thread to send data to CP
+                                            match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
+                                                Ok(()) => debug!("written to CP"),
+                                                Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
+                                            }
+                                        },
+                                        Err(e) => {
+                                            return Err(Error::new(ErrorKind::InvalidData, e))
+                                        },
+                                    }
+                                }
+                            },
+                            Err(ref e) if e.kind() == ErrorKind::ConnectionReset => {
+                                debug!("connection reset");
+                                break
+                            },
+                            Err(e) => return Err(e.into()),
+                        }
+                    }
+
+                    // wait for all threads to finish
+                    // need to verify they'll actually finish
+                    join_all(handles).await;
+
+                    // Tell CP thread to delete client from CP and from hashmap
+                    match cp_delete(local_addr.clone(), remote_addr.clone()).await {
+                        Ok(()) => return Ok(()),
+                        Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+                    }
+                },
+                Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+            }
         },
         Err(e) => {
             error!("unable to set nodelay");
@@ -157,20 +197,20 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
 }
 
 /// manage outbound client connection from beginning to end
-pub async fn client_outbound(remote_addr: String, rx: mpsc::Receiver<String>) -> Result<String> { 
+pub async fn client_outbound(remote_addr: String) -> Result<()> { 
     match TcpStream::connect(remote_addr.clone()).await {
         Ok(client_stream) => {
             match client_stream.local_addr() {
                 Ok(address) => {
                     let local_addr = address.to_string();
                     tokio::spawn(async move {
-                        match client_handler(local_addr, remote_addr, client_stream, rx).await {
-                            Ok(()) => debug!("Disconnected"),
+                        match client_handler(local_addr, remote_addr, client_stream).await {
+                            Ok(()) => debug!("Outbound client disconnected"),
                             Err(e) => error!("Error: {}", e),
                         }
                     });
 
-                    return Ok(address.to_string())
+                    return Ok(())
                 },
                 Err(e) => return Err(Error::new(ErrorKind::AddrNotAvailable, e.to_string())),
             }
@@ -179,7 +219,7 @@ pub async fn client_outbound(remote_addr: String, rx: mpsc::Receiver<String>) ->
     }
 }
 
-/// manage inbound client connection from beginning to end...
+/// creat inbound client connection
 async fn client_inbound(client_stream: TcpStream) -> Result<()> {
     let local_addr: String;
     let remote_addr: String;
@@ -194,39 +234,15 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
         Err(e) => return Err(e.into()),
     }
 
-    // Create channel to receive messages from CP thread
-    let (tx, rx) = mpsc::channel::<String>(5);
+    // handler will run as its own thread (per client)
+    tokio::spawn(async move {
+        match client_handler(local_addr.clone(), remote_addr.clone(), client_stream).await {
+            Ok(()) => debug!("Inbound client disconnected"),
+            Err(e) => error!("Error: {}", e),
+        }
+    });
 
-    // Tell CP thread to add client to CP and to hashmap
-    match cp_add(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
-        Ok(()) => {
-            let mut hold_err = false;
-            let mut held_err = Error::new(ErrorKind::Other, "not an error - yet!");
-
-            // now process messages to/from the client
-            // will only terminate when client closes or error occurs
-            match client_handler(local_addr.clone(), remote_addr.clone(), client_stream, rx).await {
-                Ok(()) => {},
-                Err(e) => { 
-                    hold_err = true;
-                    held_err = e;
-                },
-            }   
-    
-            // Tell CP thread to delete client from CP and from hashmap
-            match cp_delete(local_addr.clone(), remote_addr.clone()).await {
-                Ok(()) => {
-                    if hold_err {
-                        return Err(held_err);
-                    } else {
-                        return Ok(());
-                    }
-                },
-                Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
-            }
-        },
-        Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
-    }
+    return Ok(())
 }
 
 /// Client listener
@@ -239,16 +255,12 @@ pub async fn client_listener(socket: String) -> Result<()> {
                 // will get socket handle plus IP/port for client
                 match listener.accept().await {
                     Ok((stream, client)) => {
-
                         debug!("connected, client is {}", client.to_string());
 
-                        // spawn a green thread per client so can accept more connections
-                        tokio::spawn(async move {
-                            match client_inbound(stream).await {
-                                Ok(()) => debug!("Disconnected"),
-                                Err(e) => error!("Error: {}", e),
-                            }
-                        });
+                        match client_inbound(stream).await {
+                            Ok(()) => debug!("Disconnected"),
+                            Err(e) => error!("Error: {}", e),
+                        }
                     },
                     Err(e) => return Err(e),
                 }

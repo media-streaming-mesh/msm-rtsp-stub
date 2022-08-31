@@ -36,7 +36,7 @@ use tonic::Request;
 use once_cell::sync::OnceCell;
 static GRPC_TX: OnceCell<mpsc::Sender<Message>> = OnceCell::new();
 static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Sender<String>>, Option<String>)>> = OnceCell::new();
-const CHANNEL_SIZE: usize = 5;
+const CP_CHANNEL_SIZE: usize = 5;
 
 enum HashmapCommand {
     Insert,
@@ -157,8 +157,8 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
                                 match optional_data {
                                     Some(data) => {
                                         match value_ref.send(data).await {
-                                            Ok(()) => { debug!("sent data to channel") },
-                                            Err(_e) => { warn!("unable to send data for key {}", key) },
+                                            Ok(()) => { debug!("sent CP data to channel") },
+                                            Err(_e) => { warn!("unable to send CP data for key {}", key) },
                                         }
                                     },
                                     None => {
@@ -196,12 +196,9 @@ async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channe
 
 /// Add flow from CP
 async fn cp_add_flow(remote_addr: String) -> Result<()> {
-    // Create channel to send CP messages to client
-    let (tx, rx) = mpsc::channel::<String>(CHANNEL_SIZE);
-
-    match client_outbound(remote_addr.clone(), rx).await {
+    match client_outbound(remote_addr.clone()).await {
         // connected to client so add it to CP
-        Ok(local_addr) => return cp_add(tx, local_addr, remote_addr).await,
+        Ok(()) => return Ok(()),
         Err(e) => return Err(e),
     }
 }
@@ -295,7 +292,7 @@ pub async fn cp_connector(uri: Uri) -> Result<()> {
         Ok(mut handle) => {
 
             // Now create channel to receive messages from CP functions
-            let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(CHANNEL_SIZE);
+            let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(CP_CHANNEL_SIZE);
 
             // init the channel sender handle
             match GRPC_TX.set(grpc_tx) {

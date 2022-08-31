@@ -16,11 +16,12 @@
 
 use async_recursion::async_recursion;
 
-use log::trace;
+use log::{debug, trace, warn};
 
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc;
 
 use once_cell::sync::OnceCell;
 static RTP_TX: OnceCell<UdpSocket> = OnceCell::new();
@@ -130,7 +131,7 @@ pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
                     }
                 }
             },
-            None => return Err(Error::new(ErrorKind::NotFound, "OnceCell not initlialised")),
+            None => return Err(Error::new(ErrorKind::NotFound, "RTP OnceCell not initlialised before write")),
         }
     }
     else {
@@ -152,7 +153,73 @@ pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
                     }
                 }
             },
-            None => return Err(Error::new(ErrorKind::NotFound, "OnceCell not initlialised")),
+            None => return Err(Error::new(ErrorKind::NotFound, "RTCP OnceCell not initlialised before write")),
         }
+    }
+}
+
+pub async fn dp_rtp_recv(tx: mpsc::Sender::<String>) -> Result<usize> {
+    match RTP_TX.get() {
+        Some(socket) => {
+            let mut len = 0;
+            loop {
+                let mut buf = [0u8; 2048];
+                match socket.recv(&mut buf[4..]).await {
+                    Ok (rcvd) => {
+                        len += rcvd;
+                        buf[0] = 0x24;
+                        buf[1] = 0;
+                        buf[2] = (rcvd as u16 >> 8) as u8;
+                        buf[3] = rcvd as u8;
+                        match String::from_utf8((&buf).to_vec()) {
+                            Ok(data) => {
+                                match tx.send(data).await {
+                                    Ok(()) => debug!("sent RTP data to client"),
+                                    Err(e) => warn!("unable to send RTP data, error {}", e.to_string()),
+                                }
+                            },
+                            Err(e) => warn!("input from RTP is invalid UTF-8 {}", e.to_string()),
+                        }
+                    },
+                    Err(ref e) if e.kind() == ErrorKind::TimedOut => break,
+                    Err(e) => return Err(e),
+                }
+            }
+            return Ok(len)
+        },
+        None => return Err(Error::new(ErrorKind::NotFound, "RTP OnceCell not initlialised before read")),
+    }
+}
+
+pub async fn dp_rtcp_recv(tx: mpsc::Sender::<String>) -> Result<usize> {
+    match RTCP_TX.get() {
+        Some(socket) => {
+            let mut len = 0;
+            loop {
+                let mut buf = [0u8; 2048];
+                match socket.recv(&mut buf[4..]).await {
+                    Ok (rcvd) => {
+                        len += rcvd;
+                        buf[0] = 0x24;
+                        buf[1] = 1;
+                        buf[2] = (rcvd as u16 >> 8) as u8;
+                        buf[3] = rcvd as u8;
+                        match String::from_utf8((&buf).to_vec()) {
+                            Ok(data) => {
+                                match tx.send(data).await {
+                                    Ok(()) => debug!("sent RTCP data to client"),
+                                    Err(e) => warn!("unable to send RTCP data, error{}",  e.to_string()),
+                                }
+                            },
+                            Err(e) => warn!("input from RTCP is invalid UTF-8 {}", e.to_string()),
+                        }
+                    },
+                    Err(ref e) if e.kind() == ErrorKind::TimedOut => break,
+                    Err(e) => return Err(e),
+                }
+            }
+            return Ok(len)
+        },
+        None => return Err(Error::new(ErrorKind::NotFound, "RTCP OnceCell not initlialised before read")),
     }
 }
