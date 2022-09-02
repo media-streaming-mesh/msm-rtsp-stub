@@ -173,6 +173,7 @@ pub async fn dp_rtp_recv(tx: mpsc::Sender::<String>) -> Result<usize> {
                 trace!("attempting receive from RTP socket");
                 match socket.recv(&mut buf[4..]).await {
                     Ok (rcvd) => {
+                        trace!("{} bytes of RTP data received", rcvd);
                         len += rcvd;
                         buf[0] = 0x24;
                         buf[1] = 0;
@@ -208,6 +209,7 @@ pub async fn dp_rtcp_recv(tx: mpsc::Sender::<String>) -> Result<usize> {
                 trace!("attempting receive from RTCP socket");
                 match socket.recv(&mut buf[4..]).await {
                     Ok (rcvd) => {
+                        trace!("{} bytes of RTCP data received", rcvd);
                         len += rcvd;
                         buf[0] = 0x24;
                         buf[1] = 1;
