@@ -126,6 +126,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
 
                     // need to listen for RTP/RTCP messages
                     handles.push(tokio::spawn(async move {
+                        trace!("spawning thread for RTP receive");
                         match dp_rtp_recv(rtp_tx).await {
                             Ok(written) => info!("{} RTP bytes read", written),
                             Err(e) => debug!("RTP read error {}", e.to_string()),
@@ -133,6 +134,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                     }));
 
                     handles.push(tokio::spawn(async move {
+                        trace!("spawning thread for RTCP receive");
                         match dp_rtcp_recv(rtcp_tx).await {
                             Ok(written) => info!("{} RTCP bytes read", written),
                             Err(e) => debug!("RTCP read error {}", e.to_string()),

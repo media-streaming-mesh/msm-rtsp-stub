@@ -122,9 +122,15 @@ pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
                             trace!("sending RTP data to DP");
                     
                             match socket.try_send(&data) {
-                                Ok(written) => return Ok(written),
+                                Ok(written) => {
+                                    trace!("{} RTP bytes written", written);
+                                    return Ok(written)
+                                },
                                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue,
-                                Err(e) => return Err(e),
+                                Err(e) => {
+                                    trace!("unable to send UDP");
+                                    return Err(e)
+                                }
                             }
                         },
                         Err(e) => return Err(e.into()),
@@ -164,6 +170,7 @@ pub async fn dp_rtp_recv(tx: mpsc::Sender::<String>) -> Result<usize> {
             let mut len = 0;
             loop {
                 let mut buf = [0u8; 2048];
+                trace!("attempting receive from RTP socket");
                 match socket.recv(&mut buf[4..]).await {
                     Ok (rcvd) => {
                         len += rcvd;
@@ -181,6 +188,7 @@ pub async fn dp_rtp_recv(tx: mpsc::Sender::<String>) -> Result<usize> {
                             Err(e) => warn!("input from RTP is invalid UTF-8 {}", e.to_string()),
                         }
                     },
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
                     Err(ref e) if e.kind() == ErrorKind::TimedOut => break,
                     Err(e) => return Err(e),
                 }
@@ -197,6 +205,7 @@ pub async fn dp_rtcp_recv(tx: mpsc::Sender::<String>) -> Result<usize> {
             let mut len = 0;
             loop {
                 let mut buf = [0u8; 2048];
+                trace!("attempting receive from RTCP socket");
                 match socket.recv(&mut buf[4..]).await {
                     Ok (rcvd) => {
                         len += rcvd;
@@ -214,6 +223,7 @@ pub async fn dp_rtcp_recv(tx: mpsc::Sender::<String>) -> Result<usize> {
                             Err(e) => warn!("input from RTCP is invalid UTF-8 {}", e.to_string()),
                         }
                     },
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
                     Err(ref e) if e.kind() == ErrorKind::TimedOut => break,
                     Err(e) => return Err(e),
                 }
