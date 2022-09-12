@@ -57,12 +57,12 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
 }
 
 /// reflect back to client
-async fn client_write(writer: &OwnedWriteHalf, response: String) -> Result<usize> {
-    trace!("writing response {} to client", response);
+async fn client_write(writer: &OwnedWriteHalf, response: Vec<u8>) -> Result<usize> {
+    trace!("writing {} bytes to client", response.len());
     loop {
         match writer.writable().await {
             Ok(()) => {
-                match writer.try_write(response.as_bytes()) {
+                match writer.try_write(&response) {
                     Ok(bytes) => {
                         debug!("{} bytes written", bytes);
                         return Ok(bytes)
@@ -80,11 +80,11 @@ async fn client_write(writer: &OwnedWriteHalf, response: String) -> Result<usize
 }
 
 /// handle messages for client
-async fn client_writer(mut rx: mpsc::Receiver<String>, writer: OwnedWriteHalf) -> Result<usize> {
+async fn client_writer(mut rx: mpsc::Receiver<Vec<u8>>, writer: OwnedWriteHalf) -> Result<usize> {
     let mut written_back = 0;
 
     while let Some(message) = rx.recv().await {
-        trace!("received {} from CP", message);
+        trace!("received {} bytes for client", message.len());
         match client_write(&writer, message).await {
             Ok(bytes) => written_back += bytes,
             Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
@@ -106,7 +106,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
             let (reader, writer) = client_stream.into_split();
 
             // Create channel to receive messages for client
-            let (tx, rx) = mpsc::channel::<String>(CLIENT_CHANNEL_SIZE);
+            let (tx, rx) = mpsc::channel::<Vec<u8>>(CLIENT_CHANNEL_SIZE);
 
             match cp_add(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
                 Ok(()) => {

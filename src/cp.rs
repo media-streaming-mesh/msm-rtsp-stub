@@ -35,7 +35,7 @@ use tonic::Request;
 
 use once_cell::sync::OnceCell;
 static GRPC_TX: OnceCell<mpsc::Sender<Message>> = OnceCell::new();
-static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Sender<String>>, Option<String>)>> = OnceCell::new();
+static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>> = OnceCell::new();
 const CP_CHANNEL_SIZE: usize = 5;
 
 enum HashmapCommand {
@@ -70,7 +70,7 @@ pub async fn cp_register() -> Result<()> {
 }
 
 /// Add client to CP
-pub async fn cp_add(tx: mpsc::Sender::<String>, local_addr: String, remote_addr: String) -> Result<()> {
+pub async fn cp_add(tx: mpsc::Sender::<Vec<u8>>, local_addr: String, remote_addr: String) -> Result<()> {
     let message = Message {
         event: Event::Add as i32,
         local: local_addr.clone(),
@@ -122,8 +122,8 @@ pub async fn cp_data(local_addr: String, remote_addr: String, message_string: St
 }
 
 /// hashmap owner
-async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<mpsc::Sender<String>>, Option<String>)>) -> () {
-    let mut channels = HashMap::<String, mpsc::Sender<String>>::new();
+async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>) -> () {
+    let mut channels = HashMap::<String, mpsc::Sender<Vec<u8>>>::new();
 
     loop {
         match chan_rx.recv().await {
@@ -156,7 +156,7 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
                                 trace!("found channel for key {}",  key);
                                 match optional_data {
                                     Some(data) => {
-                                        match value_ref.send(data).await {
+                                        match value_ref.send(data.into_bytes()).await {
                                             Ok(()) => { debug!("sent CP data to channel") },
                                             Err(_e) => { warn!("unable to send CP data for key {}", key) },
                                         }
@@ -181,7 +181,7 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
 }
 
 /// Send to hashmap owner
-async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channel: Option<mpsc::Sender<String>>, optional_data: Option<String>) -> Result<()> {
+async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channel: Option<mpsc::Sender<Vec<u8>>>, optional_data: Option<String>) -> Result<()> {
     match HASH_TX.get() {
         Some(channel) => {
             trace!("sending command to hashmap for key {}", key);
@@ -303,7 +303,7 @@ pub async fn cp_connector(uri: Uri) -> Result<()> {
                         Ok(()) => {
 
                             // create channel to access hash-map entries
-                            let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<String>>, Option<String>)>(1);
+                            let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>(1);
 
                             match HASH_TX.set(hash_tx) {
                                 Ok(()) => {
