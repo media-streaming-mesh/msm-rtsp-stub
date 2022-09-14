@@ -169,7 +169,7 @@ pub async fn dp_rtp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
         Some(socket) => {
             let mut len = 0;
             loop {
-                let mut buf = [0u8; 2048];
+                let mut buf = [0u8; 65536];
                 trace!("attempting receive from RTP socket");
                 match socket.recv(&mut buf[4..]).await {
                     Ok (rcvd) => {
@@ -179,7 +179,7 @@ pub async fn dp_rtp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
                         buf[1] = 0;
                         buf[2] = (rcvd as u16 >> 8) as u8;
                         buf[3] = rcvd as u8;
-                        match tx.send((&buf).to_vec()).await {
+                        match tx.send((&buf[0..rcvd+3]).to_vec()).await {
                             Ok(()) => debug!("sent RTP data to client"),
                             Err(e) => warn!("unable to send RTP data, error{}",  e.to_string()),
                         }
@@ -200,7 +200,7 @@ pub async fn dp_rtcp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
         Some(socket) => {
             let mut len = 0;
             loop {
-                let mut buf = [0u8; 2048];
+                let mut buf = [0u8; 65536];
                 trace!("attempting receive from RTCP socket");
                 match socket.recv(&mut buf[4..]).await {
                     Ok (rcvd) => {
@@ -210,7 +210,7 @@ pub async fn dp_rtcp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
                         buf[1] = 1;
                         buf[2] = (rcvd as u16 >> 8) as u8;
                         buf[3] = rcvd as u8;
-                        match tx.send((&buf).to_vec()).await {
+                        match tx.send((&buf[0..rcvd+3]).to_vec()).await {
                             Ok(()) => debug!("sent RTCP data to client"),
                             Err(e) => warn!("unable to send RTCP data, error{}",  e.to_string()),
                         }
