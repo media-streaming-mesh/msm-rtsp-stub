@@ -27,6 +27,7 @@ use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
 use self::msm_cp::{Event, Message};
 
 use std::collections::HashMap;
+use std::fmt;
 use std::io::{Error, ErrorKind, Result};
 
 use tokio::sync::mpsc;
@@ -38,10 +39,17 @@ static GRPC_TX: OnceCell<mpsc::Sender<Message>> = OnceCell::new();
 static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>> = OnceCell::new();
 const CP_CHANNEL_SIZE: usize = 5;
 
+#[derive(Debug)]
 enum HashmapCommand {
     Insert,
     Remove,
     Send,
+}
+
+impl fmt::Display for HashmapCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 /// Queue message to send to CP
@@ -156,6 +164,7 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
                                 trace!("found channel for key {}",  key);
                                 match optional_data {
                                     Some(data) => {
+                                        trace!("Received from CP: {}", data.to_string());
                                         match value_ref.send(data.into_bytes()).await {
                                             Ok(()) => { debug!("sent CP data to channel") },
                                             Err(_e) => { warn!("unable to send CP data for key {}", key) },
@@ -184,7 +193,7 @@ async fn cp_hashmap(mut chan_rx: mpsc::Receiver<(HashmapCommand, String, Option<
 async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channel: Option<mpsc::Sender<Vec<u8>>>, optional_data: Option<String>) -> Result<()> {
     match HASH_TX.get() {
         Some(channel) => {
-            trace!("sending command to hashmap for key {}", key);
+            trace!("sending command {} to hashmap for key {}", command.to_string(), key);
             match channel.send((command, key, optional_channel, optional_data)).await {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::BrokenPipe, e.to_string())),
