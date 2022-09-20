@@ -21,8 +21,6 @@ use crate::dp::dp_demux;
 use crate::dp::dp_rtp_recv;
 use crate::dp::dp_rtcp_recv;
 
-use futures::future::join_all;
-
 use log::{debug, error, info, trace};
 
 use std::io::{Error, ErrorKind, Result};
@@ -178,10 +176,15 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                         }
                     }
 
-                    // wait for all threads to finish
-                    // need to verify they'll actually finish
-                    join_all(handles).await;
+                    trace!("waiting for threads to finish");
 
+                    // now kill the threads
+                    for handle in &handles {
+                        handle.abort();
+                    }
+
+                    trace!("threads all finished");
+                
                     // Tell CP thread to delete client from CP and from hashmap
                     match cp_delete(local_addr.clone(), remote_addr.clone()).await {
                         Ok(()) => return Ok(()),

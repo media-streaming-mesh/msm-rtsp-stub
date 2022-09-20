@@ -67,6 +67,7 @@ pub async fn cp_send(message: Message) -> Result<()> {
 
 /// Register stub at CP
 pub async fn cp_register() -> Result<()> {
+    trace!("cp register");
     let message = Message {
         event: Event::Register as i32,
         local: String::new(),
@@ -79,6 +80,7 @@ pub async fn cp_register() -> Result<()> {
 
 /// Add client to CP
 pub async fn cp_add(tx: mpsc::Sender::<Vec<u8>>, local_addr: String, remote_addr: String) -> Result<()> {
+    trace!("cp_add for {} {}", local_addr, remote_addr);
     let message = Message {
         event: Event::Add as i32,
         local: local_addr.clone(),
@@ -99,6 +101,7 @@ pub async fn cp_add(tx: mpsc::Sender::<Vec<u8>>, local_addr: String, remote_addr
 
 /// Delete client from CP
 pub async fn cp_delete(local_addr: String, remote_addr: String) -> Result<()> {
+    trace!("cp delete for {} {}", local_addr, remote_addr);
     let message = Message {
         event: Event::Delete as i32,
         local: local_addr.clone(),
@@ -119,6 +122,7 @@ pub async fn cp_delete(local_addr: String, remote_addr: String) -> Result<()> {
 
 /// Send data message to CP
 pub async fn cp_data(local_addr: String, remote_addr: String, message_string: String) -> Result<()> {
+    trace!("cp data for {} {}, data {}", local_addr, remote_addr, message_string);
     let message = Message {
         event: Event::Data as i32,
         local: local_addr,
