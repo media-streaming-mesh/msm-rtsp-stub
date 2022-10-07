@@ -209,6 +209,7 @@ async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channe
 
 /// Add flow from CP
 async fn cp_add_flow(remote_addr: String) -> Result<()> {
+    trace!("CP add flow for {}", remote_addr);
     match client_outbound(remote_addr.clone()).await {
         // connected to client so add it to CP
         Ok(()) => return Ok(()),

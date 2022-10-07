@@ -97,9 +97,14 @@ async fn client_writer(mut rx: mpsc::Receiver<Vec<u8>>, writer: OwnedWriteHalf) 
 /// handle client connection
 async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream) -> Result<()> {
 
+    trace!("client handler for {} {}", local_addr, remote_addr);
+
     // Need socket to flush messages immediately 
     match client_stream.set_nodelay(true) {
         Ok(()) => {
+
+            trace!("nodelay set for client");
+
             // split socket into sender/receiver so can hand sender to separate thread
             let (reader, writer) = client_stream.into_split();
 
@@ -114,6 +119,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
 
                     // Spawn thread to receive messages and send to client
                     handles.push(tokio::spawn(async move {
+                        trace!("spawning thread to send messages to client");
                         match client_writer(rx, writer).await {
                             Ok(written) => {
                                 debug!("Disconnected: wrote total of {} bytes back to client", written);
@@ -203,11 +209,13 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
 
 /// manage outbound client connection from beginning to end
 pub async fn client_outbound(remote_addr: String) -> Result<()> { 
+    trace!("client_outbound for {}", remote_addr);
     match TcpStream::connect(remote_addr.clone()).await {
         Ok(client_stream) => {
             match client_stream.local_addr() {
                 Ok(address) => {
                     let local_addr = address.to_string();
+                    trace!("outbound connected from {}", local_addr);
                     tokio::spawn(async move {
                         match client_handler(local_addr, remote_addr, client_stream).await {
                             Ok(()) => debug!("Outbound client disconnected"),
