@@ -32,7 +32,10 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 
     trace!("RTP proxy is {}", proxy_rtp);
 
-    match UdpSocket::bind("0.0.0.0:8050").await {
+    let rtp_port = envmnt::get_u16("LOCAL_RTP_PORT", 8554);
+    let rtcp_port = rtp_port + 1;
+
+    match UdpSocket::bind("0.0.0.0:".to_owned() + &rtp_port.to_string()).await {
         Ok(socket) => {
             trace!("bound RTP listen socket");
             match socket.connect(proxy_rtp).await {
@@ -53,7 +56,7 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 
     trace!("RTCP proxy is {}", proxy_rtcp);
 
-    match UdpSocket::bind("0.0.0.0:8051").await {
+    match UdpSocket::bind("0.0.0.0:".to_owned() + &rtcp_port.to_string()).await {
         Ok(socket) => {
             trace!("bound RTCP listen socket");
             match socket.connect(proxy_rtcp).await {

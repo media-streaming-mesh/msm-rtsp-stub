@@ -19,6 +19,7 @@ pub mod msm_cp {
 }
 
 use crate::client::client_outbound;
+use crate::dp::dp_init;
 
 use http::Uri;
 use log::{debug, trace, warn, error};
@@ -29,6 +30,8 @@ use self::msm_cp::{Event, Message};
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{Error, ErrorKind, Result};
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 use tokio::sync::mpsc;
 use tonic::transport::Channel;
@@ -260,12 +263,28 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                         error!("register from CP!");
                                         return Err(Error::new(ErrorKind::InvalidInput, "Invalid register message from CP"));
                                     },
-                                    Some(Event::Add) => {
-                                        trace!("add from CP");
+                                    Some(Event::Config) => {
+                                        trace!("config from CP");
+                                        match SocketAddr::from_str(&message.remote) {
+                                            Ok(socket_addr) => {
+                                                match dp_init(socket_addr).await {
+                                                    Ok(()) => trace!("Connected to DP"),
+                                                    Err(e) => error!("Error connecting to DP: {}", e),
+                                                }
+                                            },
+                                            Err(e) => error!("Unable to parse CP config: {}", e),
+                                        }
+                                    },
+                                    Some(Event::Request) => {
+                                        trace!("Request to add from CP");
                                         match cp_add_flow(message.remote).await {
                                             Ok(()) => debug!("CP added flow"),
                                             Err(e) => return Err(e),
                                         }
+                                    },
+                                    Some(Event::Add) => {
+                                        trace!("add from CP!");
+                                        return Err(Error::new(ErrorKind::InvalidInput, "Invalid register message from CP"));
                                     },
                                     Some(Event::Delete) => {
                                         trace!("delete from CP");

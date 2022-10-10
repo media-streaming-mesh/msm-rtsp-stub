@@ -111,6 +111,9 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
             // Create channel to receive messages for client
             let (tx, rx) = mpsc::channel::<Vec<u8>>(CLIENT_CHANNEL_SIZE);
 
+            // add the client flow to the CP
+            // in inbound case this will be unsolicited
+            // in outbound case the CP has already sent us a request to add the flow
             match cp_add(tx.clone(), local_addr.clone(), remote_addr.clone()).await {
                 Ok(()) => {
                     let mut handles = vec![];
