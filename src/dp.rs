@@ -32,7 +32,7 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 
     trace!("RTP proxy is {}", proxy_rtp);
 
-    let rtp_port = envmnt::get_u16("RTP_PROXY_PORT", 8554);
+    let rtp_port = envmnt::get_u16("LOCAL_RTP_PORT", 8554);
     let rtcp_port = rtp_port + 1;
 
     match UdpSocket::bind("0.0.0.0:".to_owned() + &rtp_port.to_string()).await {
