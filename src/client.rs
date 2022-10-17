@@ -252,7 +252,7 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
 
     // handler will run as its own thread (per client)
     tokio::spawn(async move {
-        match client_handler(local_addr.clone(), remote_addr.clone(), client_stream).await {
+        match client_handler(local_addr, remote_addr, client_stream).await {
             Ok(()) => debug!("Inbound client disconnected"),
             Err(e) => error!("Error: {}", e),
         }
