@@ -81,7 +81,8 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 pub async fn dp_demux(length: usize, data: Vec<u8>) -> Result <usize> {
     if length < 4 {
         return Err(Error::new(ErrorKind::InvalidData, "Interleaved data too short"))
-
+    }
+    
     let channel: usize = data[1].into();
     let length_inside: usize = ((data[2] as u16) << 8 | data[3] as u16).into();
     
