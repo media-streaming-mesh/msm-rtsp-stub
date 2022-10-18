@@ -90,7 +90,7 @@ pub async fn dp_demux(length: usize, data: Vec<u8>) -> Result <usize> {
     trace!("Length is {}", length);
     trace!("Length inside is {}", length_inside);
 
-    if length != length_inside + 4 {
+    if length < length_inside + 4 {
         return Err(Error::new(ErrorKind::InvalidData, "Incorrect length"))
     }
 
