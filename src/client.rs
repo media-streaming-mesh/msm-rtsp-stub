@@ -153,7 +153,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                         match client_read(&reader).await {
                             Ok((interleaved, length, data)) => {
                                 if interleaved {
-                                    trace!("Sending data to DP");
+                                    trace!("Sending {} bytes to DP", length);
                                     match dp_demux(length, data).await {
                                         Ok(written) => trace!("Sent {} bytes to DP", written),
                                         Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
