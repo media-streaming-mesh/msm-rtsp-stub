@@ -32,16 +32,14 @@ use tokio::sync::mpsc;
 const CLIENT_CHANNEL_SIZE: usize = 5;
 
 /// read command from client
-async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
+async fn client_read(reader: &OwnedReadHalf, buf: &mut [u8]) -> Result<(bool, usize)> {
     loop {
         // wait until we can read from the stream
         match reader.readable().await {
-            Ok(()) => {
-                let mut buf = [0u8; 2 << 20];
-        
-                match reader.try_read(&mut buf) {
+            Ok(()) => {     
+                match reader.try_read(buf) {
                     Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
-                    Ok(bytes_read) => return Ok(((buf[0] == 0x24), bytes_read, buf[..bytes_read].to_vec())),
+                    Ok(bytes_read) => return Ok(((buf[0] == 0x24), bytes_read)),
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
                     Err(e) => return Err(e.into()),
                 }
@@ -148,10 +146,14 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                         }
                     }));
 
+                    // only want to allocate buffer once
+                    let mut buf = [0u8; 2 << 20];
+
                     // now receive client messages until disconnect
                     loop {
-                        match client_read(&reader).await {
-                            Ok((interleaved, length, data)) => {
+                        match client_read(&reader, &mut buf).await {
+                            Ok((interleaved, length)) => {
+                                let data = buf[..length].to_vec();
                                 if interleaved {
                                     trace!("Sending {} bytes to DP", length);
                                     match dp_demux(length, data).await {
