@@ -227,7 +227,7 @@ async fn cp_del_flow(key: String) -> Result<()> {
 
 /// Received data from CP
 async fn cp_data_rcvd(key: String, data: String) -> Result<()> {
-    trace!("Data {} received from CP for flow {}", data, key);
+    debug!("Data {} received from CP for flow {}", data, key);
     return cp_access_hashmap(HashmapCommand::Send, key, None, Some(data)).await;
 }
 
@@ -268,7 +268,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                         match SocketAddr::from_str(&message.remote) {
                                             Ok(socket_addr) => {
                                                 match dp_init(socket_addr).await {
-                                                    Ok(()) => trace!("Connected to DP"),
+                                                    Ok(()) => debug!("Connected to DP {}", socket_addr),
                                                     Err(e) => error!("Error connecting to DP: {}", e),
                                                 }
                                             },
@@ -300,7 +300,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                             Err(e) => return Err(e),
                                         }
                                     },
-                                    None => return Err(Error::new(ErrorKind::InvalidInput, "Invalid gRPC operation")),
+                                    None => return Err(Error::new(ErrorKind::InvalidInput, "Invalid event value")),
                                 }
                             },
                             None => return Err(Error::new(ErrorKind::Other, "no message")),
