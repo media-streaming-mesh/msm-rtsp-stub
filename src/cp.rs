@@ -125,7 +125,7 @@ pub async fn cp_delete(local_addr: String, remote_addr: String) -> Result<()> {
 
 /// Send data message to CP
 pub async fn cp_data(local_addr: String, remote_addr: String, message_string: String) -> Result<()> {
-    trace!("cp data for {} {}, data {}", local_addr, remote_addr, message_string);
+    debug!("CP message from client {} {}, data {}", local_addr, remote_addr, message_string);
     let message = Message {
         event: Event::Data as i32,
         local: local_addr,
