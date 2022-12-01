@@ -21,7 +21,7 @@ use crate::dp::dp_demux;
 use crate::dp::dp_rtp_recv;
 use crate::dp::dp_rtcp_recv;
 
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 
 use std::io::{Error, ErrorKind, Result};
 
@@ -85,8 +85,14 @@ async fn client_writer(mut rx: mpsc::Receiver<Vec<u8>>, writer: OwnedWriteHalf) 
         trace!("received {} bytes for client", message.len());
         match client_write(&writer, message).await {
             Ok(bytes) => written_back += bytes,
-            Err(ref e) if e.kind() == ErrorKind::ConnectionReset => break,
-            Err(e) => return Err(e.into()),
+            Err(ref e) => {
+                if e.kind() == ErrorKind::ConnectionReset {
+                    warn!("Connecton reset by client");
+                    break;
+                } else {
+                    error!("Error writing to client: {}", e);
+                }
+            },
         }
         trace!("about to loop again");
     }
@@ -222,7 +228,7 @@ pub async fn client_outbound(remote_addr: String) -> Result<()> {
                     tokio::spawn(async move {
                         match client_handler(local_addr, remote_addr, client_stream).await {
                             Ok(()) => debug!("Outbound client disconnected"),
-                            Err(e) => error!("Error: {}", e),
+                            Err(e) => error!("Outbound client error: {}", e),
                         }
                     });
 
@@ -254,7 +260,7 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
     tokio::spawn(async move {
         match client_handler(local_addr, remote_addr, client_stream).await {
             Ok(()) => debug!("Inbound client disconnected"),
-            Err(e) => error!("Error: {}", e),
+            Err(e) => error!("Inbound client error: {}", e),
         }
     });
 
@@ -274,8 +280,8 @@ pub async fn client_listener(socket: String) -> Result<()> {
                         debug!("connected, client is {}", client.to_string());
 
                         match client_inbound(stream).await {
-                            Ok(()) => debug!("Disconnected"),
-                            Err(e) => error!("Error: {}", e),
+                            Ok(()) => debug!("Inbound client spawned"),
+                            Err(e) => error!("Unable to get spawn inbound client: {}", e),
                         }
                     },
                     Err(e) => return Err(e),
