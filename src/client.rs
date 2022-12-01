@@ -162,14 +162,13 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                                     trace!("Sending {} bytes to DP", length);
                                     match dp_demux(length, data).await {
                                         Ok(written) => trace!("Sent {} bytes to DP", written),
-                                        Err(e) => error!("Error sending client data to DP: {}", e.to_string());
+                                        Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
                                     }
                                 }
                                 else {
                                     // this is control plane data from client
                                     // from_utf8_lossy means we can handle the case where we have invalid UTF-8
-                                    // no need to do .into_owned() in this case as we dont need to own the returned data...
-                                    request_string = String::from_utf8_lossy(data);
+                                    let request_string = String::from_utf8_lossy(&data).to_string();
                                     trace!("Client request is {}", request_string);
 
                                     // Tell CP thread to send data to CP
