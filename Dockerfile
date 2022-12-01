@@ -15,7 +15,7 @@ COPY ./ .
 
 RUN	--mount=type=cache,target=/usr/local/cargo/registry \
 	--mount=type=cache,target=/msm-rtsp-stub/target \ 
-	cargo +beta build && cp target/debug/msm_rtsp_stub .
+	cargo build && cp target/debug/msm_rtsp_stub .
 
 ####################################################################################################
 ## Final image
