@@ -167,20 +167,15 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                                 }
                                 else {
                                     // this is control plane data from client
-                                    match String::from_utf8(data) {
-                                        Ok(request_string) => {
-                                            trace!("Client request is {}", request_string);
+                                    // from_utf8_lossy means we can handle the case where we have invalid UTF-8
+                                    // no need to do .into_owned() in this case as we dont need to own the returned data...
+                                    request_string = String::from_utf8_lossy(data);
+                                    trace!("Client request is {}", request_string);
 
-                                            // Tell CP thread to send data to CP
-                                            match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
-                                                Ok(()) => debug!("written to CP"),
-                                                Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
-                                            }
-                                        },
-                                        Err(e) => {
-                                            error!("data received from client is {}", data);
-                                            return Err(Error::new(ErrorKind::InvalidData, e))
-                                        },
+                                    // Tell CP thread to send data to CP
+                                    match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
+                                        Ok(()) => debug!("written to CP"),
+                                        Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
                                     }
                                 }
                             },
