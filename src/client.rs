@@ -162,7 +162,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                                     trace!("Sending {} bytes to DP", length);
                                     match dp_demux(length, data).await {
                                         Ok(written) => trace!("Sent {} bytes to DP", written),
-                                        Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
+                                        Err(e) => error!("Error sending client data to DP: {}", e.to_string());
                                     }
                                 }
                                 else {
@@ -178,6 +178,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                                             }
                                         },
                                         Err(e) => {
+                                            error!("data received from client is {}", data);
                                             return Err(Error::new(ErrorKind::InvalidData, e))
                                         },
                                     }
@@ -281,7 +282,7 @@ pub async fn client_listener(socket: String) -> Result<()> {
 
                         match client_inbound(stream).await {
                             Ok(()) => debug!("Inbound client spawned"),
-                            Err(e) => error!("Unable to get spawn inbound client: {}", e),
+                            Err(e) => error!("Unable to spawn inbound client: {}", e),
                         }
                     },
                     Err(e) => return Err(e),
