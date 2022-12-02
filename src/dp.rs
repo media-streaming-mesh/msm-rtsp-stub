@@ -91,6 +91,7 @@ pub async fn dp_demux(length: usize, data: Vec<u8>) -> Result <usize> {
     trace!("Length inside is {}", length_inside);
 
     if length < length_inside + 4 {
+        warn!("Remaining buffer is {} bytes, length inside is {} bytes", length, length_inside);
         return Err(Error::new(ErrorKind::InvalidData, "Incorrect length"))
     }
 
