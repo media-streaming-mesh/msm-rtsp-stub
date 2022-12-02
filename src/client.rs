@@ -31,7 +31,7 @@ use tokio::sync::mpsc;
 
 const CLIENT_CHANNEL_SIZE: usize = 5;
 
-/// read command from client
+/// read message from client
 async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
     loop {
         // wait until we can read from the stream
@@ -52,6 +52,44 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
             },
         }
     }
+}
+
+/// read client messages until disconnected
+async fn client_reader(local_addr: String, remote_addr: String, reader: &OwnedReadHalf) -> Result<usize> {
+    let mut bytes_read: usize = 0;
+    loop {
+        match client_read(&reader).await {
+            Ok((interleaved, length, data)) => {
+                bytes_read += length;
+                if interleaved {
+                    debug!("Sending {} bytes to DP", length);
+                    match dp_demux(length, data).await {
+                        Ok(written) => trace!("Sent {} bytes to DP", written),
+                        Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
+                    }
+                }
+                else {
+                    // this is control plane data from client
+                    // from_utf8_lossy means we can handle the case where we have invalid UTF-8
+                    let request_string = String::from_utf8_lossy(&data).to_string();
+                    debug!("Client request length {}, request is {}", request_string.len(), request_string);
+
+                    // Tell CP thread to send data to CP
+                    match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
+                        Ok(()) => trace!("written to CP"),
+                        Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
+                    }
+                }
+            },
+            Err(ref e) if e.kind() == ErrorKind::ConnectionReset => {
+                debug!("connection reset");
+                break
+            },
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    return Ok(bytes_read)
 }
 
 /// reflect back to client
@@ -154,36 +192,10 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                         }
                     }));
 
-                    // now receive client messages until disconnect
-                    loop {
-                        match client_read(&reader).await {
-                            Ok((interleaved, length, data)) => {
-                                if interleaved {
-                                    debug!("Sending {} bytes to DP", length);
-                                    match dp_demux(length, data).await {
-                                        Ok(written) => trace!("Sent {} bytes to DP", written),
-                                        Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
-                                    }
-                                }
-                                else {
-                                    // this is control plane data from client
-                                    // from_utf8_lossy means we can handle the case where we have invalid UTF-8
-                                    let request_string = String::from_utf8_lossy(&data).to_string();
-                                    debug!("Client request length {}, request is {}", request_string.len(), request_string);
-
-                                    // Tell CP thread to send data to CP
-                                    match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
-                                        Ok(()) => trace!("written to CP"),
-                                        Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
-                                    }
-                                }
-                            },
-                            Err(ref e) if e.kind() == ErrorKind::ConnectionReset => {
-                                debug!("connection reset");
-                                break
-                            },
-                            Err(e) => return Err(e.into()),
-                        }
+                    // now read messages from client until it finishes
+                    match client_reader(local_addr.clone(), remote_addr.clone(), &reader).await {
+                        Ok(bytes_read) => debug!("read {} bytes from client", bytes_read),
+                        Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
                     }
 
                     trace!("waiting for threads to finish");
