@@ -21,6 +21,8 @@ use crate::dp::dp_demux;
 use crate::dp::dp_rtp_recv;
 use crate::dp::dp_rtcp_recv;
 
+use bytes::BytesMut;
+
 use log::{debug, error, info, trace, warn};
 
 use std::io::{Error, ErrorKind, Result};
@@ -37,9 +39,9 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
         // wait until we can read from the stream
         match reader.readable().await {
             Ok(()) => {
-                let mut buf = [0u8; 2 << 20];
+                let mut buf = BytesMut::with_capacity(262168);
         
-                match reader.try_read(&mut buf) {
+                match reader.try_read_buf(&mut buf) {
                     Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
                     Ok(bytes_read) => return Ok(((buf[0] == 0x24), bytes_read, buf[..bytes_read].to_vec())),
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
