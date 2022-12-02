@@ -159,7 +159,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                         match client_read(&reader).await {
                             Ok((interleaved, length, data)) => {
                                 if interleaved {
-                                    trace!("Sending {} bytes to DP", length);
+                                    debug!("Sending {} bytes to DP", length);
                                     match dp_demux(length, data).await {
                                         Ok(written) => trace!("Sent {} bytes to DP", written),
                                         Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
@@ -169,11 +169,11 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                                     // this is control plane data from client
                                     // from_utf8_lossy means we can handle the case where we have invalid UTF-8
                                     let request_string = String::from_utf8_lossy(&data).to_string();
-                                    trace!("Client request is {}", request_string);
+                                    debug!("Client request length {}, request is {}", request_string.len(), request_string);
 
                                     // Tell CP thread to send data to CP
                                     match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
-                                        Ok(()) => debug!("written to CP"),
+                                        Ok(()) => trace!("written to CP"),
                                         Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
                                     }
                                 }

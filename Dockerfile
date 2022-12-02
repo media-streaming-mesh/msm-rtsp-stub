@@ -5,7 +5,7 @@
 ####################################################################################################
 FROM rust:latest AS builder
 
-RUN rustup default beta && rustup update
+RUN rustup default beta && rustup toolchain install beta --component rustfmt,rust-std,clippy && rustup update
 
 RUN update-ca-certificates
 
