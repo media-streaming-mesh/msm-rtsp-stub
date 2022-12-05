@@ -64,7 +64,7 @@ async fn client_reader(local_addr: String, remote_addr: String, reader: &OwnedRe
             Ok((interleaved, length, data)) => {
                 bytes_read += length;
                 if interleaved {
-                    debug!("Sending {} bytes to DP", length);
+                    trace!("Sending {} bytes to DP", length);
                     match dp_demux(length, data).await {
                         Ok(written) => trace!("Sent {} bytes to DP", written),
                         Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
