@@ -34,14 +34,14 @@ use tokio::sync::mpsc;
 const CLIENT_CHANNEL_SIZE: usize = 5;
 
 /// read message from client
-async fn client_read(reader: &OwnedReadHalf, buf: &mut BytesMut) -> Result<(bool, usize)> {
+async fn client_read(reader: &OwnedReadHalf, buf: &mut BytesMut) -> Result<usize> {
     loop {
         // wait until we can read from the stream
         match reader.readable().await {
             Ok(()) => {
                 match reader.try_read_buf(buf) {
                     Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
-                    Ok(bytes_read) => return Ok(((buf[0] == 0x24), bytes_read)),
+                    Ok(bytes_read) => return Ok(bytes_read),
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
                     Err(e) => return Err(e.into()),
                 }
@@ -54,14 +54,29 @@ async fn client_read(reader: &OwnedReadHalf, buf: &mut BytesMut) -> Result<(bool
     }
 }
 
+/// process CP data from client
+async fn client_data(local_addr: String, remote_addr: String, data: &mut[u8]) -> Result<()> {
+    // from_utf8_lossy means we can handle the case where we have invalid UTF-8
+    // but may only be because of incorrectly received data so switch back to from_utf8 once that's fixed?
+    let request_string = String::from_utf8_lossy(data).to_string();
+
+    debug!("Client request length {}, request is {}", request_string.len(), request_string);
+
+    // Tell CP thread to send data to CP
+    match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
+        Ok(()) => return Ok(()),
+        Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
+    }
+}
+    
 /// read client messages until disconnected
 async fn client_reader(local_addr: String, remote_addr: String, reader: &OwnedReadHalf) -> Result<usize> {
     let mut bytes_read: usize = 0;
     let mut frag: Vec<u8> = Vec::new();
-        loop {
+    loop {
         let mut buf = BytesMut::with_capacity(262168);
         match client_read(&reader, &mut buf).await {
-            Ok((mut interleaved, mut length)) => {
+            Ok(mut length) => {
                 bytes_read += length;
                 let mut data = &mut buf[..];
 
@@ -70,37 +85,32 @@ async fn client_reader(local_addr: String, remote_addr: String, reader: &OwnedRe
                 if frag.len() > 0 {
                     debug!("fragment length is {}, new buffer length is {}", frag.len(), length);
                     length += frag.len();
-                    interleaved = true;
                     frag.append(&mut buf.to_vec());
                     data = &mut frag[..];
                 }
 
-                if interleaved {
-                    trace!("Sending {} bytes to DP", length);
-                    match dp_demux(length, data).await {
-                        Ok((fragment, written, offset)) => {
-                            trace!("Sent {} bytes to DP", written);
-                            if fragment {
-                                debug!("unfinished buffer");
-                                frag = (offset).to_vec();
-                            } else {
-                                frag.clear();
-                            }
-                        },
-                        Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
-                    }
-                } else {
-                    // this is control plane data from client
-                    // from_utf8_lossy means we can handle the case where we have invalid UTF-8
-                    // but may only be because of incorrectly received data so swith back to from_utf8 once that's fixed?
-                    let request_string = String::from_utf8_lossy(&buf).to_string();
-                    debug!("Client request length {}, request is {}", request_string.len(), request_string);
-
-                    // Tell CP thread to send data to CP
-                    match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
-                        Ok(()) => trace!("written to CP"),
-                        Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
-                    }
+                // attempt to send to DP
+                match dp_demux(length, data).await {
+                    Ok((fragment, written, optional_remaining_data)) => {
+                        trace!("Sent {} bytes to DP", written);
+                        match optional_remaining_data {
+                            Some(remaining_data) => {
+                                if fragment {
+                                    debug!("unfinished buffer");
+                                    frag = remaining_data.to_vec();
+                                } else {
+                                    // assume any non-DP data is CP data
+                                    match client_data(local_addr.clone(), remote_addr.clone(), remaining_data).await {
+                                        Ok(()) => trace!("written to CP"),
+                                        Err(e) => return Err(e.into()),
+                                    }
+                                    frag.clear();
+                                }
+                            },
+                            None => frag.clear(),
+                        }
+                    },
+                    Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
                 }
             },
             Err(ref e) if e.kind() == ErrorKind::ConnectionReset => {

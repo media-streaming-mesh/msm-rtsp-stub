@@ -27,6 +27,8 @@ use once_cell::sync::OnceCell;
 static RTP_TX: OnceCell<UdpSocket> = OnceCell::new();
 static RTCP_TX: OnceCell<UdpSocket> = OnceCell::new();
 
+const RTSP_MAGIC_FLAG: u8 = 0x24;
+
 /// init the UDP sockets to send to DP
 pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 
@@ -78,7 +80,12 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 
 /// demux interleaved data
 #[async_recursion]
-pub async fn dp_demux(length: usize, data: &mut [u8]) -> Result <(bool, usize, &mut [u8])> {
+pub async fn dp_demux(length: usize, data: &mut [u8]) -> Result <(bool, usize, Option<&mut [u8]>)> {
+    if data[0] != RTSP_MAGIC_FLAG {
+        // this is CP data
+        return Ok((false, 0, Some(data)))
+    }
+
     if length < 4 {
         return Err(Error::new(ErrorKind::InvalidData, "Interleaved data too short"))
     }
@@ -91,8 +98,9 @@ pub async fn dp_demux(length: usize, data: &mut [u8]) -> Result <(bool, usize, &
     trace!("Length inside is {}", length_inside);
 
     if length < length_inside + 4 {
+        // this is a fragment of DP data
         debug!("Remaining buffer is {} bytes, length inside is {} bytes", length, length_inside);
-        return Ok((true, 0, data))
+        return Ok((true, 0, Some(data)))
     }
 
     // Send first (or only) RTP/RTCP data block 
@@ -102,16 +110,16 @@ pub async fn dp_demux(length: usize, data: &mut [u8]) -> Result <(bool, usize, &
             let next = written + 4;
             let left = length - next;
             if left > 0 {
-                trace!("recursing...");
+                trace!("recursing as {} bytes left in buffer", left);
                 // recursive call to demux will handle any remaining RTP/RTCP data blocks
                 match dp_demux(left, &mut data[next..]).await {
-                    Ok((fragment, wrote, offset)) => return Ok((fragment, wrote+written, offset)),
+                    Ok((fragment, wrote, opt_rem_data)) => return Ok((fragment, wrote+written, opt_rem_data)),
                     Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),  
                 }
             }
             else {
-                // All AOK
-                return Ok((false, written, data))
+                // this was the final DP message in the buffer, and buffer is now empty
+                return Ok((false, written, None))
             }     
         },
         Err(e) => return Err(e),
