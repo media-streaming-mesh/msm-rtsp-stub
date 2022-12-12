@@ -78,7 +78,7 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
 
 /// demux interleaved data
 #[async_recursion]
-pub async fn dp_demux(length: usize, data: Vec<u8>) -> Result <usize> {
+pub async fn dp_demux(length: usize, data: &mut [u8]) -> Result <(bool, usize, &mut [u8])> {
     if length < 4 {
         return Err(Error::new(ErrorKind::InvalidData, "Interleaved data too short"))
     }
@@ -91,8 +91,8 @@ pub async fn dp_demux(length: usize, data: Vec<u8>) -> Result <usize> {
     trace!("Length inside is {}", length_inside);
 
     if length < length_inside + 4 {
-        warn!("Remaining buffer is {} bytes, length inside is {} bytes", length, length_inside);
-        return Err(Error::new(ErrorKind::InvalidData, "Incorrect length"))
+        debug!("Remaining buffer is {} bytes, length inside is {} bytes", length, length_inside);
+        return Ok((true, 0, data))
     }
 
     // Send first (or only) RTP/RTCP data block 
@@ -104,14 +104,14 @@ pub async fn dp_demux(length: usize, data: Vec<u8>) -> Result <usize> {
             if left > 0 {
                 trace!("recursing...");
                 // recursive call to demux will handle any remaining RTP/RTCP data blocks
-                match dp_demux(left, data[next..].to_vec()).await {
-                    Ok(wrote) => return Ok(wrote+written),
+                match dp_demux(left, &mut data[next..]).await {
+                    Ok((fragment, wrote, offset)) => return Ok((fragment, wrote+written, offset)),
                     Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),  
                 }
             }
             else {
                 // All AOK
-                return Ok(written)
+                return Ok((false, written, data))
             }     
         },
         Err(e) => return Err(e),

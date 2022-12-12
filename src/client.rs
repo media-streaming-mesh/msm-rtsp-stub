@@ -34,16 +34,14 @@ use tokio::sync::mpsc;
 const CLIENT_CHANNEL_SIZE: usize = 5;
 
 /// read message from client
-async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
+async fn client_read(reader: &OwnedReadHalf, buf: &mut BytesMut) -> Result<(bool, usize)> {
     loop {
         // wait until we can read from the stream
         match reader.readable().await {
             Ok(()) => {
-                let mut buf = BytesMut::with_capacity(262168);
-        
-                match reader.try_read_buf(&mut buf) {
+                match reader.try_read_buf(buf) {
                     Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
-                    Ok(bytes_read) => return Ok(((buf[0] == 0x24), bytes_read, buf[..bytes_read].to_vec())),
+                    Ok(bytes_read) => return Ok(((buf[0] == 0x24), bytes_read)),
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
                     Err(e) => return Err(e.into()),
                 }
@@ -59,21 +57,43 @@ async fn client_read(reader: &OwnedReadHalf) -> Result<(bool, usize, Vec<u8>)> {
 /// read client messages until disconnected
 async fn client_reader(local_addr: String, remote_addr: String, reader: &OwnedReadHalf) -> Result<usize> {
     let mut bytes_read: usize = 0;
-    loop {
-        match client_read(&reader).await {
-            Ok((interleaved, length, data)) => {
+    let mut frag: Vec<u8> = Vec::new();
+        loop {
+        let mut buf = BytesMut::with_capacity(262168);
+        match client_read(&reader, &mut buf).await {
+            Ok((mut interleaved, mut length)) => {
                 bytes_read += length;
+                let mut data = &mut buf[..];
+
+                // if fragment left over then we want to add new buffer to it
+                // if not then we don't want to copy (fast path)
+                if frag.len() > 0 {
+                    debug!("fragment length is {}, new buffer length is {}", frag.len(), length);
+                    length += frag.len();
+                    interleaved = true;
+                    frag.append(&mut buf.to_vec());
+                    data = &mut frag[..];
+                }
+
                 if interleaved {
                     trace!("Sending {} bytes to DP", length);
                     match dp_demux(length, data).await {
-                        Ok(written) => trace!("Sent {} bytes to DP", written),
+                        Ok((fragment, written, offset)) => {
+                            trace!("Sent {} bytes to DP", written);
+                            if fragment {
+                                debug!("unfinished buffer");
+                                frag = (offset).to_vec();
+                            } else {
+                                frag.clear();
+                            }
+                        },
                         Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
                     }
-                }
-                else {
+                } else {
                     // this is control plane data from client
                     // from_utf8_lossy means we can handle the case where we have invalid UTF-8
-                    let request_string = String::from_utf8_lossy(&data).to_string();
+                    // but may only be because of incorrectly received data so swith back to from_utf8 once that's fixed?
+                    let request_string = String::from_utf8_lossy(&buf).to_string();
                     debug!("Client request length {}, request is {}", request_string.len(), request_string);
 
                     // Tell CP thread to send data to CP
