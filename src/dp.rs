@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-use async_recursion::async_recursion;
-
 use log::{debug, trace, warn};
 
 use std::io::{Error, ErrorKind, Result};
@@ -73,48 +71,6 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
             }
         },
         Err(e) => return Err(e.into()),
-    }
-}
-
-/// demux interleaved data
-#[async_recursion]
-pub async fn dp_demux(length: usize, data: &mut [u8]) -> Result <(bool, usize, &mut [u8])> {
-    if length < 4 {
-        return Err(Error::new(ErrorKind::InvalidData, "Interleaved data too short"))
-    }
-    
-    let channel: usize = data[1].into();
-    let length_inside: usize = ((data[2] as u16) << 8 | data[3] as u16).into();
-    
-    trace!("Channel is {}", channel);
-    trace!("Length is {}", length);
-    trace!("Length inside is {}", length_inside);
-
-    if length < length_inside + 4 {
-        debug!("Remaining buffer is {} bytes, length inside is {} bytes", length, length_inside);
-        return Ok((true, 0, data))
-    }
-
-    // Send first (or only) RTP/RTCP data block 
-    match dp_send(data[4..length_inside+4].to_vec(), channel).await {
-        Ok(written) => {
-            trace!("wrote {} bytes to DP", written);
-            let next = written + 4;
-            let left = length - next;
-            if left > 0 {
-                trace!("recursing...");
-                // recursive call to demux will handle any remaining RTP/RTCP data blocks
-                match dp_demux(left, &mut data[next..]).await {
-                    Ok((fragment, wrote, offset)) => return Ok((fragment, wrote+written, offset)),
-                    Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),  
-                }
-            }
-            else {
-                // All AOK
-                return Ok((false, written, data))
-            }     
-        },
-        Err(e) => return Err(e),
     }
 }
 

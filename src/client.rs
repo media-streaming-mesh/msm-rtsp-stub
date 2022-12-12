@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
+use async_recursion::async_recursion;
+
 use crate::cp::cp_add;
 use crate::cp::cp_delete;
 use crate::cp::cp_data;
-use crate::dp::dp_demux;
+use crate::dp::dp_send;
 use crate::dp::dp_rtp_recv;
 use crate::dp::dp_rtcp_recv;
 
@@ -34,14 +36,14 @@ use tokio::sync::mpsc;
 const CLIENT_CHANNEL_SIZE: usize = 5;
 
 /// read message from client
-async fn client_read(reader: &OwnedReadHalf, buf: &mut BytesMut) -> Result<(bool, usize)> {
+async fn client_read(reader: &OwnedReadHalf, buf: &mut BytesMut) -> Result<usize> {
     loop {
         // wait until we can read from the stream
         match reader.readable().await {
             Ok(()) => {
                 match reader.try_read_buf(buf) {
                     Ok(0) => return Err(Error::new(ErrorKind::ConnectionReset,"client closed connection")),
-                    Ok(bytes_read) => return Ok(((buf[0] == 0x24), bytes_read)),
+                    Ok(bytes_read) => return Ok(bytes_read),
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => continue, // try again
                     Err(e) => return Err(e.into()),
                 }
@@ -54,6 +56,75 @@ async fn client_read(reader: &OwnedReadHalf, buf: &mut BytesMut) -> Result<(bool
     }
 }
 
+/// demux data from client
+#[async_recursion]
+pub async fn client_demux(local_addr: String, remote_addr: String, length: usize, data: &mut [u8]) -> Result <(bool, &mut [u8])> {
+
+    if length < 4 {
+        return Err(Error::new(ErrorKind::InvalidData, "Received client data too short"))
+    }
+
+    let next;
+
+    if data[0] == 0x24 {        
+        let channel: usize = data[1].into();
+        let length_inside: usize = ((data[2] as u16) << 8 | data[3] as u16).into();
+        
+        trace!("Channel is {}", channel);
+        trace!("Length is {}", length);
+        trace!("Length inside is {}", length_inside);
+    
+        if length < length_inside + 4 {
+            debug!("Remaining buffer is {} bytes, length inside is {} bytes", length, length_inside);
+            return Ok((true, data))
+        }
+    
+        // Send first (or only) RTP/RTCP data block 
+        match dp_send(data[4..length_inside+4].to_vec(), channel).await {
+            Ok(written) => {
+                trace!("wrote {} bytes to DP", written);
+                next = written + 4;
+            },
+            Err(e) => return Err(e),
+        }
+
+    } else {
+        // this is control plane data from client
+        // from_utf8_lossy means we can handle the case where we have invalid UTF-8
+        // the split_once is so we can handle cases where we have CP data followed by CP or DP data 
+        // but may only be because of incorrectly received data so swith back to from_utf8 once that's fixed?
+        match String::from_utf8_lossy(data).to_string().split_once("\r\n\r\n") {
+            Some((left, _right)) => {
+                let request_string = (left.to_owned() + "\r\n\r\n").to_string();
+                debug!("Client request length {}, request is {}", request_string.len(), request_string);
+
+                // Tell CP thread to send data to CP
+                match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
+                    Ok(()) => trace!("written to CP"),
+                    Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
+                }
+                
+                next = left.len() + 4;
+            },
+            None => return Err(Error::new(ErrorKind::InvalidData, "incorrectly terminated client data")),
+        }
+    }
+
+    let left = length - next;
+
+    if left == 0 {
+        // All AOK
+        return Ok((false, data))
+    } else {
+        trace!("recursing...");
+        // recursive call to demux will handle any remaining RTP/RTCP data blocks
+        match client_demux(local_addr.clone(), remote_addr.clone(), left, &mut data[next..]).await {
+            Ok((fragment, offset)) => return Ok((fragment, offset)),
+            Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),  
+        }
+    }     
+}
+
 /// read client messages until disconnected
 async fn client_reader(local_addr: String, remote_addr: String, reader: &OwnedReadHalf) -> Result<usize> {
     let mut bytes_read: usize = 0;
@@ -61,7 +132,7 @@ async fn client_reader(local_addr: String, remote_addr: String, reader: &OwnedRe
         loop {
         let mut buf = BytesMut::with_capacity(262168);
         match client_read(&reader, &mut buf).await {
-            Ok((mut interleaved, mut length)) => {
+            Ok(mut length) => {
                 bytes_read += length;
                 let mut data = &mut buf[..];
 
@@ -70,37 +141,21 @@ async fn client_reader(local_addr: String, remote_addr: String, reader: &OwnedRe
                 if frag.len() > 0 {
                     debug!("fragment length is {}, new buffer length is {}", frag.len(), length);
                     length += frag.len();
-                    interleaved = true;
                     frag.append(&mut buf.to_vec());
                     data = &mut frag[..];
                 }
 
-                if interleaved {
-                    trace!("Sending {} bytes to DP", length);
-                    match dp_demux(length, data).await {
-                        Ok((fragment, written, offset)) => {
-                            trace!("Sent {} bytes to DP", written);
-                            if fragment {
-                                debug!("unfinished buffer");
-                                frag = (offset).to_vec();
-                            } else {
-                                frag.clear();
-                            }
-                        },
-                        Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
-                    }
-                } else {
-                    // this is control plane data from client
-                    // from_utf8_lossy means we can handle the case where we have invalid UTF-8
-                    // but may only be because of incorrectly received data so swith back to from_utf8 once that's fixed?
-                    let request_string = String::from_utf8_lossy(&buf).to_string();
-                    debug!("Client request length {}, request is {}", request_string.len(), request_string);
-
-                    // Tell CP thread to send data to CP
-                    match cp_data(local_addr.clone(), remote_addr.clone(), request_string).await {
-                        Ok(()) => trace!("written to CP"),
-                        Err(e) => return Err(Error::new(ErrorKind::ConnectionAborted, e.to_string())),
-                    }
+                match client_demux(local_addr.clone(), remote_addr.clone(), length, data).await {
+                    Ok((fragment, offset)) => {
+                        if fragment {
+                            debug!("unfinished buffer");
+                            frag = (offset).to_vec();
+                        } else {
+                            trace!("clearing fragment buffer");
+                            frag.clear();
+                        }
+                    },
+                    Err(e) => error!("Error sending client data to DP: {}", e.to_string()),
                 }
             },
             Err(ref e) if e.kind() == ErrorKind::ConnectionReset => {
