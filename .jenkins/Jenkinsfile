@@ -7,7 +7,7 @@
 
 def pipelinesettings = [
   deploy: [
-    [name: "msm_rtsp_stub" ]        // Containers to publish
+    [name: "msm-rtsp-stub" ]        // Containers to publish
   ],
 
   tagversion: "${env.BUILD_ID}",    // Docker tag version
