@@ -14,7 +14,7 @@ def pipelinesettings = [
   build: 1,                         // Build container
   publishContainer: 1,              // Publish container
   dockerHub: 1,                     // Publish container to dockerhub.cisco.com
-  gitDefaultBranch: "main",         // Default Git Branch
+  gitDefaultBranch: "main",         // Specify Default Git Branch
   disableInclusiveLint:1,           // Disable disableInclusiveLint during development
 ]
 
