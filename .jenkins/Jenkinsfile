@@ -10,11 +10,10 @@ def pipelinesettings = [
     [name: "msm-rtsp-stub" ]        // Containers to publish
   ],
 
-  tagversion: "${env.BUILD_ID}",    // Docker tag version
   prepare: 1,                       // GIT Clone
   build: 1,                         // Build container
   publishContainer: 1,              // Publish container
-  ecr: 1,                           // Publish container to Private ECR
+  dockerHub: 1,                     // Publish container to dockerhub.cisco.com
   gitDefaultBranch: "main",         // Default Git Branch
   disableInclusiveLint:1,           // Disable disableInclusiveLint during development
 ]

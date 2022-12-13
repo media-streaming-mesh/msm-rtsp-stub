@@ -14,7 +14,7 @@ WORKDIR /msm-rtsp-stub
 COPY ./ .
 
 RUN	--mount=type=cache,target=/usr/local/cargo/registry \
-	--mount=type=cache,target=/msm-rtsp-stub/target \ 
+	--mount=type=cache,target=/msm-rtsp-stub/target \
 	cargo build && cp target/debug/msm_rtsp_stub .
 
 ####################################################################################################
