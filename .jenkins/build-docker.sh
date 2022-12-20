@@ -1,4 +1,4 @@
-#!/bin/bash -e -x
+#!/bin/bash -x
 # Syntax build-docker.sh [-i|--image imagename]
 
 PROJECT=msm-rtsp-stub
