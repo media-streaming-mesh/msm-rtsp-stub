@@ -16,7 +16,8 @@ def pipelinesettings = [
   publishContainer: 1,              // Publish container
   dockerHub: 1,                     // Publish container to dockerhub.cisco.com
   gitDefaultBranch: "main",         // Specify Default Git Branch
-  disableInclusiveLint:1,           // Disable disableInclusiveLint during development
+  disableInclusiveLint: 1,          // Disable disableInclusiveLint during development
+  noCleanWS: 1,                     // Don't clean workspace (developer testing)
 ]
 
 srePipeline( pipelinesettings )
