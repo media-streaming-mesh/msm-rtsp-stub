@@ -24,4 +24,5 @@ do
 done
 
 echo BUILDING DOCKER ${DOCKER_IMAGE}
+sh -x
 docker buildx build --platform linux/amd64 -t ${DOCKER_IMAGE} -f Dockerfile .
