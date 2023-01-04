@@ -25,4 +25,4 @@ done
 
 echo BUILDING DOCKER ${DOCKER_IMAGE}
 
-docker build -t ${DOCKER_IMAGE} -f Dockerfile .
+docker buildx build --build-arg DOCKER_DEFAULT_PLATFORM=linux/amd64 -t ${DOCKER_IMAGE} -f Dockerfile .
