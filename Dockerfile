@@ -1,12 +1,10 @@
 # syntax=docker/dockerfile:experimental
-FROM docker
-COPY --from=docker/buildx-bin:latest /buildx /usr/libexec/docker/cli-plugins/docker-buildx
-RUN docker buildx version
 ####################################################################################################
 ## Builder
 ####################################################################################################
 FROM rust:latest AS builder
 ENV DOCKER_CLI_EXPERIMENTAL=enabled
+ENV DOCKER_BUILDKIT=1
 RUN rustup default beta && rustup toolchain install beta --component rustfmt,rust-std,clippy && rustup update
 
 RUN update-ca-certificates
