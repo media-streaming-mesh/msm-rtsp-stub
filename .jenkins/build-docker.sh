@@ -23,4 +23,5 @@ do
     esac
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
+docker buildx ls
 docker buildx build --platform=linux/amd64 -t ${DOCKER_IMAGE} -f Dockerfile .
