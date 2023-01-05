@@ -4,6 +4,12 @@
 ## Builder
 ####################################################################################################
 FROM rust:latest AS builder
+# Install buildx
+# ensure all builds runs with Buildkit
+ENV DOCKER_BUILDKIT=1
+# enable full log of Buildkit builds
+ENV BUILDKIT_PROGRESS=plain
+# enable Buildx integration with docker
 ENV DOCKER_CLI_EXPERIMENTAL=enabled
 
 ARG BUILDX_URL=https://github.com/docker/buildx/releases/download/v0.9.1/buildx-v0.9.1.linux-amd64

@@ -22,6 +22,5 @@ do
         exit 4
     esac
 done
-docker -v
 echo BUILDING DOCKER ${DOCKER_IMAGE}
 docker buildx build --platform=linux/amd64 -t ${DOCKER_IMAGE} -f Dockerfile .
