@@ -3,8 +3,7 @@
 ## Builder
 ####################################################################################################
 FROM rust:latest AS builder
-ENV DOCKER_CLI_EXPERIMENTAL=enabled
-ENV DOCKER_BUILDKIT=1
+
 RUN rustup default beta && rustup toolchain install beta --component rustfmt,rust-std,clippy && rustup update
 
 RUN update-ca-certificates
