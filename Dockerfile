@@ -20,7 +20,7 @@ RUN	--mount=type=cache,target=/usr/local/cargo/registry \
 ## Final image
 ####################################################################################################
 FROM ubuntu
-RUN apt-get update
+RUN apt-get update && apt-get install -y wget
 # Install buildx
 # ensure all builds runs with Buildkit
 ENV DOCKER_BUILDKIT=1
