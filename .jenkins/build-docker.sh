@@ -23,7 +23,7 @@ do
     esac
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
+docker -v
 docker buildx create --name multi-platform-images 
 docker buildx create use multi-platform-images
-docker -v
 docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f ../Dockerfile .
