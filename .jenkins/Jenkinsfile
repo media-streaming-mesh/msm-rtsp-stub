@@ -1,4 +1,4 @@
-@Library(['srePipelineLegacy@buildx']) _
+@Library(['srePipeline@buildx']) _
 
 // --------------------------------------------
 // Refer to Pipeline docs for options used in mysettings
