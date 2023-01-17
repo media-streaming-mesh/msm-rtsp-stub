@@ -27,7 +27,8 @@ if [ ! -d ~/.docker ];then
     mkdir ~/.docker
 fi
 echo '{ "experimental": "enabled" }' > ~/.docker/config.json
-sudo service docker restart
+sudo systemctl daemon-reload
+sudo systemctl restart docker
 docker version
 docker buildx create --use
 docker buildx ls
