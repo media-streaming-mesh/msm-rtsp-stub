@@ -23,10 +23,5 @@ do
     esac
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
-export DOCKER_BUILDKIT=1
-docker build --platform=local -o . git://github.com/docker/buildx
-mkdir -p ~/.docker/cli-plugins
-mv buildx ~/.docker/cli-plugins/docker-buildx
-docker buildx ls
 docker buildx create --name=multi-arch-images --driver=docker-container --use
 docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f  ../Dockerfile .
