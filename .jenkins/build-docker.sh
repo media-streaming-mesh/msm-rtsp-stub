@@ -24,5 +24,6 @@ do
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
 export DOCKER_CLI_EXPERIMENTAL=enabled
+docker buildx ls
 docker buildx create --name=multi-arch-images --driver=docker-container --use
-docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f  ../Dockerfile .
+docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f  Dockerfile 
