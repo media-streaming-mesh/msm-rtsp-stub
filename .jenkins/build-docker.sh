@@ -23,9 +23,11 @@ do
     esac
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
-mkdir ~/.docker
+if [ ! -d ~/.docker ];then
+    mkdir ~/.docker
+fi
 echo '{ "experimental": "enabled" }' > ~/.docker/config.json
-sudo systemctl restart docker
+sudo service docker restart
 docker version
 docker buildx create --use
 docker buildx ls
