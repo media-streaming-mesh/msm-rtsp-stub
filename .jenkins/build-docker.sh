@@ -27,6 +27,6 @@ mkdir ~/.docker
 echo '{ "experimental": "enabled" }' > ~/.docker/config.json
 sudo systemctl restart docker
 docker version
-docker buildx create --name=multi-arch-images --driver=docker-container --use
+docker buildx create --use
 docker buildx ls
 docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f  Dockerfile 
