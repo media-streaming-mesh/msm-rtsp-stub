@@ -18,6 +18,7 @@ def pipelinesettings = [
   gitDefaultBranch: "main",         // Specify Default Git Branch
   disableInclusiveLint: 1,          // Disable disableInclusiveLint during development
   noCleanWS: 1,                     // Don't clean workspace (developer testing)
+  overridePipelineDockerVersion: "2023.01.18-f052c57-100",
 ]
 
 srePipeline( pipelinesettings )
