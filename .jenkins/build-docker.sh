@@ -23,5 +23,6 @@ do
     esac
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
+docker buildx ls
 docker buildx create --name=builder-name --driver=docker-container --use 
 docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f  Dockerfile 
