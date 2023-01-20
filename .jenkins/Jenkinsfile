@@ -1,4 +1,4 @@
-@Library(['srePipeline@buildx']) _
+@Library(['srePipeline']) _
 
 // --------------------------------------------
 // Refer to Pipeline docs for options used in mysettings
@@ -18,7 +18,7 @@ def pipelinesettings = [
   gitDefaultBranch: "main",         // Specify Default Git Branch
   disableInclusiveLint: 1,          // Disable disableInclusiveLint during development
   noCleanWS: 1,                     // Don't clean workspace (developer testing)
-  overridePipelineDockerVersion: "2023.01.18-f052c57-100",
+  overridePipelineDockerVersion: "2023.01.20-f0d5770-102",
 ]
 
 srePipeline( pipelinesettings )
