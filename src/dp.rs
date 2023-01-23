@@ -99,7 +99,7 @@ pub async fn dp_demux(length: usize, data: &mut [u8]) -> Result <(bool, usize, O
 
     if length < length_inside + 4 {
         // this is a fragment of DP data
-        debug!("Remaining buffer is {} bytes, length inside is {} bytes", length, length_inside);
+        debug!("Remaining buffer is {} bytes, length inside is {} bytes (channel {})", length, length_inside, channel);
         return Ok((true, 0, Some(data)))
     }
 
@@ -191,7 +191,7 @@ pub async fn dp_rtp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
                     Ok (rcvd) => {
                         trace!("{} bytes of RTP data received", rcvd);
                         len += rcvd;
-                        buf[0] = 0x24;
+                        buf[0] = RTSP_MAGIC_FLAG;
                         buf[1] = 0;
                         buf[2] = (rcvd as u16 >> 8) as u8;
                         buf[3] = rcvd as u8;
@@ -222,7 +222,7 @@ pub async fn dp_rtcp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
                     Ok (rcvd) => {
                         trace!("{} bytes of RTCP data received", rcvd);
                         len += rcvd;
-                        buf[0] = 0x24;
+                        buf[0] = RTSP_MAGIC_FLAG;
                         buf[1] = 1;
                         buf[2] = (rcvd as u16 >> 8) as u8;
                         buf[3] = rcvd as u8;
