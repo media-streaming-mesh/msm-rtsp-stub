@@ -1,24 +1,30 @@
 @Library(['srePipeline']) _
 
-// --------------------------------------------
-// Refer to Pipeline docs for options used in mysettings
-// https://wwwin-github.cisco.com/pages/eti/sre-pipeline-library
-// --------------------------------------------
+params = [:]
 
-def pipelinesettings = [
-  deploy: [
-    [name: "msm-rtsp-stub" ]        // Containers to publish
-  ],
+pipeline {
+    agent {
+        label 'eti-jenkins-common-xlarge-3'
+    }
 
-  tagversion: "${env.BUILD_ID}",    // Docker tag version
-  prepare: 1,                       // GIT Clone
-  build: 1,                         // Build container
-  publishContainer: 1,              // Publish container
-  dockerHub: 1,                     // Publish container to dockerhub.cisco.com
-  gitDefaultBranch: "main",         // Specify Default Git Branch
-  disableInclusiveLint: 1,          // Disable disableInclusiveLint during development
-  noCleanWS: 1,                     // Don't clean workspace (developer testing)
-  overridePipelineDockerVersion: "2023.01.20-f0d5770-102",
-]
-
-srePipeline( pipelinesettings )
+    stages {
+        stage('git clone') {
+            steps {
+              script{
+                params = sreGetProperties.all( params )
+                sh '''
+                rm -rf msm-rtsp-stub
+                git clone https://github.com/media-streaming-mesh/msm-rtsp-stub.git -b jenkins msm-rtsp-stub
+                '''
+            }
+          }
+        }
+        stage('BUILD & PUBLISH') {
+            steps {
+                sh '''
+                ${WORKSPACE}/msm-rtsp-stub/.jenkins/build-docker.sh
+                '''
+            }
+        }
+    }
+}
