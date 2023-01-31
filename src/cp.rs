@@ -59,6 +59,7 @@ impl fmt::Display for HashmapCommand {
 pub async fn cp_send(message: Message) -> Result<()> {
     match GRPC_TX.get() {
         Some(channel) => {
+            trace!("queueing for CP");
             match channel.send(message).await {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
@@ -236,11 +237,14 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 
     let requests = async_stream::stream! {
         loop {
-            trace!("request for CP");
+            trace!("awaiting request for CP");
             match grpc_rx.recv().await {
-                Some(message) => yield(message),
+                Some(message) => {
+                    trace!("received {} messsage for CP", message.event);
+                    yield(message)
+                },
                 None => {
-                    error!("no message received from CP");
+                    error!("no message received for CP");
                     return
                 },
             }
@@ -252,6 +256,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
             let mut inbound = responses.into_inner();
 
             loop {
+                trace!("awaiting message from CP");
                 match inbound.message().await {
                     Ok(option) => {
                         trace!("received from CP");
@@ -284,7 +289,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                     },
                                     Some(Event::Add) => {
                                         trace!("add from CP!");
-                                        return Err(Error::new(ErrorKind::InvalidInput, "Invalid register message from CP"));
+                                        return Err(Error::new(ErrorKind::InvalidInput, "Invalid add message from CP"));
                                     },
                                     Some(Event::Delete) => {
                                         trace!("delete from CP");
@@ -303,10 +308,16 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                     None => return Err(Error::new(ErrorKind::InvalidInput, "Invalid event value")),
                                 }
                             },
-                            None => return Err(Error::new(ErrorKind::Other, "no message")),
+                            None => {
+                                trace!("no message received from CP");
+                                return Err(Error::new(ErrorKind::Other, "no message"))
+                            },
                         }
                     },
-                    Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
+                    Err(e) => {
+                        trace!("unable to receive from CP");
+                        return Err(Error::new(ErrorKind::Other, e.to_string()))
+                    },
                 }
             }
         },
