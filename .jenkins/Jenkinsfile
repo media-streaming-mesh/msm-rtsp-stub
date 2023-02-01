@@ -11,11 +11,11 @@ def pipelinesettings = [
   ],
 
   tagversion: "${env.BUILD_ID}",    // Docker tag version
+  gitDefaultBranch: "SRE-4659",         // Specify Default Git Branch
   prepare: 1,                       // GIT Clone
   build: 1,                         // Build container
   publishContainer: 1,              // Publish container
   dockerHub: 1,                     // Publish container to dockerhub.cisco.com
-  gitDefaultBranch: "SRE-4659",         // Specify Default Git Branch
-]
 
+]
 srePipeline( pipelinesettings )
