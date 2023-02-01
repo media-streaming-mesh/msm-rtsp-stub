@@ -25,4 +25,4 @@ done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
 docker buildx ls
 docker buildx create --name=multi-arch-image --driver=docker-container --use 
-docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f  ../Dockerfile 
+docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f  Dockerfile 
