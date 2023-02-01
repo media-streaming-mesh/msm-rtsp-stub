@@ -11,7 +11,7 @@ pipeline {
         stage('git clone') {
             steps {
               script{
-                params = sreGetProperties.all( params )
+                //params = sreGetProperties.all( params )
                 sh '''
                 rm -rf msm-rtsp-stub
                 git clone https://github.com/media-streaming-mesh/msm-rtsp-stub.git -b jenkins msm-rtsp-stub
