@@ -1,30 +1,28 @@
 @Library(['srePipeline']) _
 
-params = [:]
+def pipelinesettings = [
+  deploy: [
+    [name: "msm-rtsp-stub" ]        // Containers to publish
+  ],
 
-pipeline {
-    agent {
-        label 'eti-jenkins-common-xlarge-3'
-    }
+  tagversion: "${env.BUILD_ID}",    // Docker tag version
+  appname: 'msm-rtsp-stub',         // Deployment appname
+  kubeverify: "msm-rtsp-stub",      // Deploy verification name
+  namespace: 'msm',                 // k8s namespace
+  overrideDockerLabel: 'eti-jenkins-common-xlarge-11',  // run on dedicated agent
 
-    stages {
-        stage('git clone') {
-            steps {
-              script{
-                //params = sreGetProperties.all( params )
-                sh '''
-                rm -rf msm-rtsp-stub
-                git clone https://github.com/media-streaming-mesh/msm-rtsp-stub.git -b jenkins msm-rtsp-stub
-                '''
-            }
-          }
-        }
-        stage('BUILD & PUBLISH') {
-            steps {
-                sh '''
-                ${WORKSPACE}/msm-rtsp-stub/.jenkins/build-docker.sh
-                '''
-            }
-        }
-    }
-}
+  prepare: 1,                       // Git Clone
+  checkoutLFS: 0,                   // Git Checkout LFS
+  unittest: 0,                      // Run unit tests in 'unit-test.sh'
+  build: 1,                         // Build container
+  publishContainer: 1,              // Publish container
+  ecr: 0,                           // Publish container to Private ECR
+  dockerPreamble: "dockerhub.cisco.com/msm/",   // Makefile prefixes this
+  gitDefaultBranch: "main",         // Default Git Branch
+  chart: "deploy",                  // Use deployment multi-helm chart folder
+  publishHelm: 0,                   // HELM CREATE
+  useMultipleHelm: 0,               // Publish Multiple Charts
+  chartMuseum: 0,                   // Publish Helm chart to ChartMuseum
+]
+
+srePipeline( pipelinesettings )

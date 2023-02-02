@@ -3,7 +3,6 @@
 
 PROJECT=msm-rtsp-stub
 DOCKER_IMAGE=${PROJECT}:latest
-DOCKER_REGISTRY ?= dockerhub.cisco.com/msm
 
 while [[ $# -gt 0 ]]
 do
@@ -26,4 +25,4 @@ done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
 docker buildx ls
 docker buildx create --name=multi-arch-image --driver=docker-container --use
-docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE} . -f Dockerfile
+docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f  Dockerfile
