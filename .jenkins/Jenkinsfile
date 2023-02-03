@@ -23,9 +23,8 @@ pipeline {
                 sh '''
                 ${WORKSPACE}/msm-rtsp-stub/.jenkins/build-docker.sh
                 '''
-
-                params = sreGetProperties.all( params )
-                sreDockerHubCisco( params );
+                params = sreGetProperties.all( [:] )
+                sreDockerHubCisco( params )
             }
         }
     }
