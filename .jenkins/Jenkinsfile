@@ -20,11 +20,13 @@ pipeline {
         }
         stage('BUILD & PUBLISH') {
             steps {
+              script{
                 sh '''
                 ${WORKSPACE}/msm-rtsp-stub/.jenkins/build-docker.sh
                 '''
                 params = sreGetProperties.all( [:] )
                 sreDockerHubCisco( params )
+              }
             }
         }
     }
