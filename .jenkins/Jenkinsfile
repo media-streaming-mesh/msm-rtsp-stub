@@ -13,15 +13,19 @@ def pipelinesettings = [
 
   prepare: 1,                       // Git Clone
   checkoutLFS: 0,                   // Git Checkout LFS
+  disableInclusiveLint: 1,          // Speed things along
   unittest: 0,                      // Run unit tests in 'unit-test.sh'
   build: 1,                         // Build container
   publishContainer: 1,              // Publish container
+  dockerHub: 1,                     // Publish container to dockerhub.cisco.com
   ecr: 0,                           // Publish container to Private ECR
   gitDefaultBranch: "main",         // Default Git Branch
   chart: "deploy",                  // Use deployment multi-helm chart folder
   publishHelm: 0,                   // HELM CREATE
   useMultipleHelm: 0,               // Publish Multiple Charts
   chartMuseum: 0,                   // Publish Helm chart to ChartMuseum
+  noCleanWS: 1,                     // Don't clean workspace (developer testing)
+  overridePipelineDockerVersion: "2023.01.20-f0d5770-102",
 ]
 
 srePipeline( pipelinesettings )
