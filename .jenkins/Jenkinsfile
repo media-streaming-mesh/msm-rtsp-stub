@@ -25,6 +25,9 @@ pipeline {
                 ${WORKSPACE}/msm-rtsp-stub/.jenkins/build-docker.sh
                 '''
                 params = sreGetProperties.all( [:] )
+                params.deploy = []
+                params.deploy.name = "msm-rtsp-stub"
+                params.deploy.tagversion = "${env.BUILD_ID}"
                 sreDockerHubCisco( params )
               }
             }
