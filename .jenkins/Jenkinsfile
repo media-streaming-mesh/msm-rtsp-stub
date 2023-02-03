@@ -24,15 +24,8 @@ pipeline {
                 sh '''
                 ${WORKSPACE}/msm-rtsp-stub/.jenkins/build-docker.sh
                 '''
-            },
-            {
-                def creds = [
-                  usernamePassword(
-                    credentialsId: params.JENKINS_DOCKERHUB_CREDS,
-                    passwordVariable: 'DOCKERHUB_CISCO_PASS',
-                    usernameVariable: 'DOCKERHUB_CISCO_USER')];
 
-                sreDockerHubCisco.withCredentials(creds);
+                sreDockerHubCisco(params);
             }
         }
     }
