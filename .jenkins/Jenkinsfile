@@ -1,4 +1,4 @@
-@Library(['srePipeline']) _
+@Library(['srePipeline@master']) _
 
 // --------------------------------------------
 // Refer to Pipeline docs for options used in mysettings
@@ -11,10 +11,11 @@ def pipelinesettings = [
   ],
 
   tagversion: "${env.BUILD_ID}",    // Docker tag version
-  gitDefaultBranch: "SRE-4659",         // Specify Default Git Branch
+  gitDefaultBranch: "SRE-4659",     // Specify Default Git Branch
   prepare: 1,                       // GIT Clone
   build: 1,                         // Build container
   publishContainer: 1,              // Publish container
+  disableInclusiveLint: 1,          // Disable Inclusive Lint during deployment
   dockerHub: 1,                     // Publish container to dockerhub.cisco.com
 
 ]
