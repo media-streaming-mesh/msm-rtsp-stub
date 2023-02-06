@@ -1,6 +1,13 @@
 @Library(['srePipeline']) _
 
-params = [:]
+def params = [
+  deploy: [
+    [
+        name: "msm-rtsp-stub",
+        tagversion: "${env.BUILD_ID}"
+    ]
+  ]
+]
 
 pipeline {
     agent {
@@ -25,9 +32,6 @@ pipeline {
                 ${WORKSPACE}/msm-rtsp-stub/.jenkins/build-docker.sh
                 '''
                 params = sreGetProperties.all( [:] )
-                params.deploy = []
-                params.deploy.name = "msm-rtsp-stub"
-                params.deploy.tagversion = "${env.BUILD_ID}"
                 sreDockerHubCisco( params )
               }
             }
