@@ -1,6 +1,5 @@
 #!/bin/bash -x
 # Syntax build-docker.sh [-i|--image imagename]
-
 PROJECT=msm-rtsp-stub
 DOCKER_IMAGE=${PROJECT}:latest
 ARCH=multi-arch-image
@@ -23,6 +22,7 @@ do
     esac
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
+apt-get update -y 
 # create a build instance
 docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 docker buildx rm  ${ARCH} | true
