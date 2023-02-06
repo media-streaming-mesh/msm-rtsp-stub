@@ -22,6 +22,7 @@ do
     esac
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
+su - root
 apt-get update -y 
 # create a build instance
 docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
