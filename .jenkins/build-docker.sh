@@ -3,7 +3,7 @@
 
 PROJECT=msm-rtsp-stub
 DOCKER_IMAGE=${PROJECT}:latest
-
+ARCH=multi-arch-image
 while [[ $# -gt 0 ]]
 do
     key="${1}"
@@ -23,12 +23,9 @@ do
     esac
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
-#Install buildx
-DOCKER_BUILDKIT=1
-docker build --platform=local -o . git://github.com/docker/buildx
-mkdir -p ~/.docker/cli-plugins
-mv buildx ~/.docker/cli-plugins/docker-buildx
-
-docker buildx ls
-docker buildx create --name=multi-arch-image --driver=docker-container --use 
+# create a build instance
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+docker buildx rm  ${ARCH} | true
+docker buildx create --name=${ARCH} --driver=docker-container --use 
 docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f Dockerfile .
+
