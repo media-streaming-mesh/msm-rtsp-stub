@@ -17,6 +17,6 @@ def pipelinesettings = [
   publishContainer: 1,              // Publish container
   disableInclusiveLint: 1,          // Disable Inclusive Lint during deployment
   dockerHub: 1,                     // Publish container to dockerhub.cisco.com
-
+  overridePipelineDockerVersion: "2023.02.07-8b96bfd-5",
 ]
 srePipeline( pipelinesettings )
