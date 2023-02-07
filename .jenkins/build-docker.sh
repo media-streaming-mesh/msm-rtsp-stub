@@ -23,6 +23,7 @@ do
 done
 echo BUILDING DOCKER ${DOCKER_IMAGE}
 docker version
+chown ubuntu:docker /var/run/docker.sock
 # create a build instance
 docker buildx rm  ${ARCH} | true
 docker buildx create --name=${ARCH} --driver=docker-container --use 
