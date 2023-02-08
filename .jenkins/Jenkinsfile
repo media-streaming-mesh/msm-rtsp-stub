@@ -1,0 +1,33 @@
+@Library(['srePipeline']) _
+
+def ciscoContainerCreds = [
+    usernamePassword(
+        credentialsId: "botuser_dockerhub_cisco_com",
+        passwordVariable: 'DOCKERHUB_CISCO_PASS',
+        usernameVariable: 'DOCKERHUB_CISCO_USER')];
+
+pipeline {
+    agent {
+        label 'eti-jenkins-common-xlarge-3'
+    }
+
+    stages {
+        stage('git clone') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('BUILD & PUBLISH') {
+            steps {
+                script {
+                    withCredentials(ciscoContainerCreds) {
+                        sh '''
+                        docker login -u="${DOCKERHUB_CISCO_USER}" -p="${DOCKERHUB_CISCO_PASS}" dockerhub.cisco.com
+                        ${WORKSPACE}/.jenkins/build-docker.sh
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}

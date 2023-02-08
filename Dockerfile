@@ -1,9 +1,8 @@
 # syntax=docker/dockerfile:experimental
-
 ####################################################################################################
 ## Builder
 ####################################################################################################
-FROM rust:latest AS builder
+FROM dockerhub.cisco.com/docker.io/rust:latest AS builder
 
 RUN rustup default beta && rustup toolchain install beta --component rustfmt,rust-std,clippy && rustup update
 
@@ -14,7 +13,7 @@ WORKDIR /msm-rtsp-stub
 COPY ./ .
 
 RUN	--mount=type=cache,target=/usr/local/cargo/registry \
-	--mount=type=cache,target=/msm-rtsp-stub/target \ 
+	--mount=type=cache,target=/msm-rtsp-stub/target \
 	cargo build && cp target/debug/msm_rtsp_stub .
 
 ####################################################################################################
@@ -28,4 +27,3 @@ WORKDIR /
 COPY --from=builder /msm-rtsp-stub/msm_rtsp_stub .
 
 ENTRYPOINT ["/msm_rtsp_stub"]
-
