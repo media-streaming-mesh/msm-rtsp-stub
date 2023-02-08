@@ -25,7 +25,6 @@ echo BUILDING DOCKER ${DOCKER_IMAGE}
 docker version
 sudo chown ubuntu:docker /var/run/docker.sock
 # create a build instance
-sudo docker buildx rm  ${ARCH} | true
-sudo docker buildx create --name=${ARCH} --driver=docker-container --use 
-sudo docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f Dockerfile .
-
+docker buildx rm  ${ARCH} | true
+docker buildx create --name=${ARCH} --driver=docker-container --use 
+docker buildx build --platform linux/amd64,linux/arm64 -t ${DOCKER_IMAGE} -f Dockerfile .
