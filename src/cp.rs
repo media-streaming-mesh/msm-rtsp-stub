@@ -34,6 +34,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 
 use tokio::sync::{mpsc, Mutex};
+use tokio::time;
 use tonic::transport::Channel;
 use tonic::Request;
 
@@ -63,11 +64,26 @@ impl fmt::Display for HashmapCommand {
     }
 }
 
+/// write channel tx handle to GPRC mutex
+async fn cp_grpc_handle_write(channel: mpsc::Sender<Message>) -> () {
+    let mut guard = GRPC_TX.lock().await;
+    *guard = Some(channel);
+    return // will implicitly release the lock
+}
+
+/// read channel tx handle from GRPC mutex
+async fn cp_grpc_handle_read() -> Result<mpsc::Sender<Message>> {
+    match &*GRPC_TX.lock().await {
+        Some(channel) => return Ok(channel.clone()),
+        None => return Err(Error::new(ErrorKind::Other, "mutex not initialised")),
+    }
+}
+
 /// Queue message to send to CP
 pub async fn cp_send(message: Message) -> Result<()> {
-    match &*GRPC_TX.lock().await {
-
-        Some(channel) => {
+    trace!("cp send");
+    match cp_grpc_handle_read().await {
+        Ok(channel) => {
             trace!("queueing for CP");
 
             match channel.send(message).await {
@@ -75,7 +91,7 @@ pub async fn cp_send(message: Message) -> Result<()> {
                 Ok(_) => return Ok(()),
             }
         },
-        None => return Err(Error::new(ErrorKind::Other, "mutex not initialised")),
+        Err(e) => return Err(e),
     }
 }
 
@@ -348,30 +364,35 @@ pub async fn cp_connector(uri: Uri) -> Result<()> {
             tokio::spawn(async { cp_hashmap(hash_rx).await });
 
             loop {
-                let mut guard = GRPC_TX.lock().await;
-
                 // create channel to receive messages from CP functions
                 let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(CP_CHANNEL_SIZE);
 
-                *guard = Some(grpc_tx.clone());
+                // write the tx handle into the mutex
+                cp_grpc_handle_write(grpc_tx).await;
 
                 debug!("connecting to gRPC CP");
 
                 match MsmControlPlaneClient::connect(uri.clone()).await {
                     Ok(mut handle) => {
 
+                        trace!("connected to gRPC CP");
+
                         // Now register the stub with the CP
                         match cp_register().await {
                             Ok(()) => {
                                 match cp_stream(&mut handle, grpc_rx).await {
-                                    Ok(()) => continue,
-                                    Err(e) => return Err(e),
+                                    Ok(()) => trace!("CP disconnected"),
+                                    Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
                                 }
+                                continue
                             },
                             Err(e) => return Err(e),
                         }
                     },
-                    Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+                    Err(e) => {
+                        trace!("Unable to connect to control-plane - error {}", e.to_string());
+                        time::sleep(time::Duration::from_secs(1)).await;
+                    },
                 }
             }
         },
