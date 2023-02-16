@@ -2,7 +2,7 @@
 ####################################################################################################
 ## Builder
 ####################################################################################################
-FROM dockerhub.cisco.com/docker.io/rust:latest AS builder
+FROM devhub-docker.cisco.com/docker.io/rust:latest AS builder
 
 RUN rustup default beta && rustup toolchain install beta --component rustfmt,rust-std,clippy && rustup update
 
