@@ -33,14 +33,23 @@ use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
+use tokio::time;
 use tonic::transport::Channel;
 use tonic::Request;
 
-use once_cell::sync::OnceCell;
-static GRPC_TX: OnceCell<mpsc::Sender<Message>> = OnceCell::new();
+use once_cell::sync::{Lazy, OnceCell};
+
+// global mutable handle to channel that sends to GRPC thread
+// Uses async-safe Tokio Mutex to control access to current sender channel
+// will create a channel each time we (re-)connect to the control plane
+static GRPC_TX: Lazy<Mutex<Option<mpsc::Sender<Message>>>> = Lazy::new(|| Mutex::new(None));
+
+// global immutable handle to channel that sends to hashmap thread
 static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>> = OnceCell::new();
+
 const CP_CHANNEL_SIZE: usize = 5;
+const HASH_CHANNEL_SIZE: usize = 5;
 
 #[derive(Debug)]
 enum HashmapCommand {
@@ -55,17 +64,34 @@ impl fmt::Display for HashmapCommand {
     }
 }
 
+/// write channel tx handle to GPRC mutex
+async fn cp_grpc_handle_write(channel: mpsc::Sender<Message>) -> () {
+    let mut guard = GRPC_TX.lock().await;
+    *guard = Some(channel);
+    return // will implicitly release the lock
+}
+
+/// read channel tx handle from GRPC mutex
+async fn cp_grpc_handle_read() -> Result<mpsc::Sender<Message>> {
+    match &*GRPC_TX.lock().await {
+        Some(channel) => return Ok(channel.clone()),
+        None => return Err(Error::new(ErrorKind::Other, "mutex not initialised")),
+    }
+}
+
 /// Queue message to send to CP
 pub async fn cp_send(message: Message) -> Result<()> {
-    match GRPC_TX.get() {
-        Some(channel) => {
+    trace!("cp send");
+    match cp_grpc_handle_read().await {
+        Ok(channel) => {
             trace!("queueing for CP");
+
             match channel.send(message).await {
-                Ok(()) => return Ok(()),
                 Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
+                Ok(_) => return Ok(()),
             }
         },
-        None => return Err(Error::new(ErrorKind::NotFound, "gRPC handle not initialised")),
+        Err(e) => return Err(e),
     }
 }
 
@@ -328,44 +354,48 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 /// CP connector
 pub async fn cp_connector(uri: Uri) -> Result<()> {
 
-    debug!("connecting to gRPC CP");
-    
-    // Connect to gRPC CP
-    match MsmControlPlaneClient::connect(uri).await {
+    // create channel to access hash-map entries
+    let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>(HASH_CHANNEL_SIZE);
 
-        Ok(mut handle) => {
+    match HASH_TX.set(hash_tx) {
+        Ok(()) => {
 
-            // Now create channel to receive messages from CP functions
-            let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(CP_CHANNEL_SIZE);
+            // start the hash-map task
+            tokio::spawn(async { cp_hashmap(hash_rx).await });
 
-            // init the channel sender handle
-            match GRPC_TX.set(grpc_tx) {
-                Ok(()) => {
+            loop {
+                // create channel to receive messages from CP functions
+                let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(CP_CHANNEL_SIZE);
 
-                    // Now register the stub with the CP
-                    match cp_register().await {
-                        Ok(()) => {
+                // write the tx handle into the mutex
+                cp_grpc_handle_write(grpc_tx).await;
 
-                            // create channel to access hash-map entries
-                            let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>(1);
+                debug!("connecting to gRPC CP");
 
-                            match HASH_TX.set(hash_tx) {
-                                Ok(()) => {
-                                    // start the hash-map task
-                                    tokio::spawn(async move { cp_hashmap(hash_rx).await });
+                match MsmControlPlaneClient::connect(uri.clone()).await {
+                    Ok(mut handle) => {
 
-                                    // now start handling messages
-                                    return cp_stream(&mut handle, grpc_rx).await
-                                },
-                                _ => return Err(Error::new(ErrorKind::AlreadyExists, "Hashmap OnceCell already set")),
-                            }
-                        },
-                        Err(e) => return Err(e),
-                    }
-                },
-                _ => return Err(Error::new(ErrorKind::AlreadyExists, "gRPC OnceCell already set")),
+                        trace!("connected to gRPC CP");
+
+                        // Now register the stub with the CP
+                        match cp_register().await {
+                            Ok(()) => {
+                                match cp_stream(&mut handle, grpc_rx).await {
+                                    Ok(()) => trace!("CP disconnected"),
+                                    Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                                }
+                                continue
+                            },
+                            Err(e) => return Err(e),
+                        }
+                    },
+                    Err(e) => {
+                        trace!("Unable to connect to control-plane - error {}", e.to_string());
+                        time::sleep(time::Duration::from_secs(1)).await;
+                    },
+                }
             }
         },
-        Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+        _ => return Err(Error::new(ErrorKind::AlreadyExists, "Hashmap OnceCell already set")),
     }
 }
