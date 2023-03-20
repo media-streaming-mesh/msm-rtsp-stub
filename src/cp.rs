@@ -48,6 +48,9 @@ static GRPC_TX: Lazy<Mutex<Option<mpsc::Sender<Message>>>> = Lazy::new(|| Mutex:
 // global immutable handle to channel that sends to hashmap thread
 static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>> = OnceCell::new();
 
+// global immutable flag to indicate that DP is initialised
+static DP_INIT: OnceCell<()> = OnceCell::new();
+
 const CP_CHANNEL_SIZE: usize = 5;
 const HASH_CHANNEL_SIZE: usize = 5;
 
@@ -295,12 +298,22 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                         return Err(Error::new(ErrorKind::InvalidInput, "Invalid register message from CP"));
                                     },
                                     Some(Event::Config) => {
-                                        trace!("config from CP");
                                         match SocketAddr::from_str(&message.remote) {
                                             Ok(socket_addr) => {
-                                                match dp_init(socket_addr).await {
-                                                    Ok(()) => debug!("Connected to DP {}", socket_addr),
-                                                    Err(e) => error!("Error connecting to DP: {}", e),
+                                                match DP_INIT.get() {
+                                                    Some(()) => debug!("DP already initialised"),
+                                                    None => {
+                                                        match DP_INIT.set(()) {
+                                                            Ok(()) => {
+                                                                debug!("DP init flag set");
+                                                                match dp_init(socket_addr).await {
+                                                                    Ok(()) => debug!("Connected to DP {}", socket_addr),
+                                                                    Err(e) => error!("Error connecting to DP: {}", e),
+                                                                }
+                                                            },
+                                                            _ => error!("unable to set DP lock"),
+                                                        }
+                                                    }
                                                 }
                                             },
                                             Err(e) => error!("Unable to parse CP config: {}", e),
