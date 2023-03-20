@@ -21,13 +21,46 @@ use log::{debug, trace, warn};
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
-use once_cell::sync::OnceCell;
-static RTP_TX: OnceCell<UdpSocket> = OnceCell::new();
-static RTCP_TX: OnceCell<UdpSocket> = OnceCell::new();
+use once_cell::sync::Lazy;
+
+// global mutable handles to UDP sockets to data plane
+// Uses async-safe Tokio Mutex to control access to current socket
+// will create sockets each time we (re-)connect to the data plane
+static RTP_TX: Lazy<Mutex<Option<UdpSocket>>> = Lazy::new(|| Mutex::new(None));
+static RTCP_TX: Lazy<Mutex<Option<UdpSocket>>> = Lazy::new(|| Mutex::new(None));
 
 const RTSP_MAGIC_FLAG: u8 = 0x24;
+
+/// write channel tx handle to RTP mutex
+async fn dp_rtp_handle_write(socket: UdpSocket) -> () {
+    let mut guard = RTP_TX.lock().await;
+    *guard = Some(socket);
+    return // will implicitly release the lock
+}
+
+/// read channel tx handle from RTP mutex
+async fn dp_rtp_handle_read() -> Result<&'static UdpSocket> {
+    match *RTP_TX.lock().await {
+        Some(socket) => return Ok(&socket),
+        None => return Err(Error::new(ErrorKind::Other, "RTP mutex not initialised")),
+    }
+}
+/// write channel tx handle to RTCP mutex
+async fn dp_rtcp_handle_write(socket: UdpSocket) -> () {
+    let mut guard = RTCP_TX.lock().await;
+    *guard = Some(socket);
+    return // will implicitly release the lock
+}
+
+/// read channel tx handle from RTCP mutex
+async fn dp_rtcp_handle_read() -> Result<&'static UdpSocket> {
+    match *RTCP_TX.lock().await {
+        Some(socket) => return Ok(&socket),
+        None => return Err(Error::new(ErrorKind::Other, "RTCP mutex not initialised")),
+    }
+}
 
 /// init the UDP sockets to send to DP
 pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
@@ -42,11 +75,8 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
             trace!("bound RTP listen socket");
             match socket.connect(proxy_rtp).await {
                 Ok(()) => {
-                    trace!("connected to proxy");
-                    match RTP_TX.set(socket) {
-                        Ok(()) => trace!("connected RTP DP socket"), 
-                        _ => return Err(Error::new(ErrorKind::AlreadyExists, "RTP OnceCell already set")),
-                    }                    
+                    trace!("connected to RTP proxy");
+                    dp_rtp_handle_write(socket).await;            
                 },
                 Err(e) => return Err(e.into()),
             }
@@ -63,19 +93,16 @@ pub async fn dp_init(proxy_rtp: SocketAddr) -> Result <()> {
             trace!("bound RTCP listen socket");
             match socket.connect(proxy_rtcp).await {
                 Ok(()) => {
-                    match RTCP_TX.set(socket) {
-                        Ok(()) => {
-                            trace!("connected RTCP DP socket");
-                            return Ok(())
-                        },
-                        _ => return Err(Error::new(ErrorKind::AlreadyExists, "RTCP OnceCell already set")),
-                    }
+                    trace!("connected to RTCP proxy");
+                    dp_rtcp_handle_write(socket).await;
                 },
                 Err(e) => return Err(e.into()),
             }
         },
         Err(e) => return Err(e.into()),
     }
+
+    return Ok(())
 }
 
 /// demux interleaved data
@@ -129,8 +156,8 @@ pub async fn dp_demux(length: usize, data: &mut [u8]) -> Result <(bool, usize, O
 /// Send RTP/RTCP UDP packet to the DP
 pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
     if channel == 0 {
-        match RTP_TX.get() {
-            Some(socket) => {
+        match dp_rtp_handle_read().await {
+            Ok(socket) => {
                 loop {
                     match socket.writable().await {
                         Ok(()) => {
@@ -153,12 +180,12 @@ pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
                     }
                 }
             },
-            None => return Err(Error::new(ErrorKind::NotFound, "RTP OnceCell not initlialised before write")),
+            Err(e) => return Err(e),
         }
     }
     else {
-        match RTCP_TX.get() {
-            Some(socket) => {
+        match dp_rtcp_handle_read().await {
+            Ok(socket) => {
                 loop {
                     match socket.writable().await {
                         Ok(()) => {
@@ -175,14 +202,14 @@ pub async fn dp_send(data:Vec<u8>, channel: usize) -> Result <usize> {
                     }
                 }
             },
-            None => return Err(Error::new(ErrorKind::NotFound, "RTCP OnceCell not initlialised before write")),
+            Err(e) => return Err(e),
         }
     }
 }
 
 pub async fn dp_rtp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
-    match RTP_TX.get() {
-        Some(socket) => {
+    match dp_rtp_handle_read().await {
+        Ok(socket) => {
             let mut len = 0;
             loop {
                 let mut buf = [0u8; 65536];
@@ -207,13 +234,13 @@ pub async fn dp_rtp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
             }
             return Ok(len)
         },
-        None => return Err(Error::new(ErrorKind::NotFound, "RTP OnceCell not initlialised before read")),
+        Err(e) => return Err(e),
     }
 }
 
 pub async fn dp_rtcp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
-    match RTCP_TX.get() {
-        Some(socket) => {
+    match dp_rtcp_handle_read().await {
+        Ok(socket) => {
             let mut len = 0;
             loop {
                 let mut buf = [0u8; 65536];
@@ -238,6 +265,6 @@ pub async fn dp_rtcp_recv(tx: mpsc::Sender::<Vec<u8>>) -> Result<usize> {
             }
             return Ok(len)
         },
-        None => return Err(Error::new(ErrorKind::NotFound, "RTCP OnceCell not initlialised before read")),
+        Err(e) => return Err(e),
     }
 }

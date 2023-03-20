@@ -75,7 +75,7 @@ async fn cp_grpc_handle_write(channel: mpsc::Sender<Message>) -> () {
 async fn cp_grpc_handle_read() -> Result<mpsc::Sender<Message>> {
     match &*GRPC_TX.lock().await {
         Some(channel) => return Ok(channel.clone()),
-        None => return Err(Error::new(ErrorKind::Other, "mutex not initialised")),
+        None => return Err(Error::new(ErrorKind::Other, "GRPC mutex not initialised")),
     }
 }
 
