@@ -19,7 +19,7 @@ use msm_rtsp_stub::cp::cp_connector;
 
 use futures::future::join_all;
 use http::Uri;
-use log::{info, error};
+use log::{debug, info, error};
 use std::str::FromStr;
 
 use simple_logger;
@@ -46,9 +46,16 @@ async fn main() {
                         }
                     }));
                 
+                    // create the identity string for the client
+                    let node_name = envmnt::get_or("MSM_NODE_NAME", "node");
+                    let namespace = envmnt::get_or("MSM_POD_NAMESPACE", "namespace");
+                    let pod_name = envmnt::get_or("MSM_POD_NAME", "pod");
+                    let identity_string = [node_name, namespace, pod_name].join(":");
+                    debug!("identity string is {}", identity_string);
+
                     // spawn a green thread for the CP communication
                     handles.push(tokio::spawn(async move {
-                        match cp_connector(control_plane).await {
+                        match cp_connector(control_plane, identity_string).await {
                             Ok(()) => info!("Disconnected!"),
                             Err(e) => error!("Error: {}", e),
                         }

@@ -51,6 +51,9 @@ static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Send
 // global immutable flag to indicate that DP is initialised
 static DP_INIT: OnceCell<()> = OnceCell::new();
 
+// global variable to store pod identity
+static POD_ID: OnceCell<String> = OnceCell::new();
+
 const CP_CHANNEL_SIZE: usize = 5;
 const HASH_CHANNEL_SIZE: usize = 5;
 
@@ -101,14 +104,20 @@ pub async fn cp_send(message: Message) -> Result<()> {
 /// Register stub at CP
 pub async fn cp_register() -> Result<()> {
     trace!("cp register");
-    let message = Message {
-        event: Event::Register as i32,
-        local: String::new(),
-        remote: String::new(),
-        data: String::new(),
-    };
 
-    return cp_send(message).await
+    match POD_ID.get() {
+        Some(pod_id) => {
+            let message = Message {
+                event: Event::Register as i32,
+                local: String::new(),
+                remote: String::new(),
+                data: pod_id.clone(),
+            };
+        
+            return cp_send(message).await
+        },
+        None => return Err(Error::new(ErrorKind::NotFound, "PodID not initlialised")),
+    }
 }
 
 /// Add client to CP
@@ -365,50 +374,55 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 }
 
 /// CP connector
-pub async fn cp_connector(uri: Uri) -> Result<()> {
+pub async fn cp_connector(uri: Uri, pod_id: String) -> Result<()> {
 
-    // create channel to access hash-map entries
-    let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>(HASH_CHANNEL_SIZE);
-
-    match HASH_TX.set(hash_tx) {
+    match POD_ID.set(pod_id) {
         Ok(()) => {
+            // create channel to access hash-map entries
+            let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>(HASH_CHANNEL_SIZE);
 
-            // start the hash-map task
-            tokio::spawn(async { cp_hashmap(hash_rx).await });
+            match HASH_TX.set(hash_tx) {
+                Ok(()) => {
 
-            loop {
-                // create channel to receive messages from CP functions
-                let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(CP_CHANNEL_SIZE);
+                    // start the hash-map task
+                    tokio::spawn(async { cp_hashmap(hash_rx).await });
 
-                // write the tx handle into the mutex
-                cp_grpc_handle_write(grpc_tx).await;
+                    loop {
+                        // create channel to receive messages from CP functions
+                        let (grpc_tx, grpc_rx) = mpsc::channel::<Message>(CP_CHANNEL_SIZE);
 
-                debug!("connecting to gRPC CP");
+                        // write the tx handle into the mutex
+                        cp_grpc_handle_write(grpc_tx).await;
 
-                match MsmControlPlaneClient::connect(uri.clone()).await {
-                    Ok(mut handle) => {
+                        debug!("connecting to gRPC CP");
 
-                        trace!("connected to gRPC CP");
+                        match MsmControlPlaneClient::connect(uri.clone()).await {
+                            Ok(mut handle) => {
 
-                        // Now register the stub with the CP
-                        match cp_register().await {
-                            Ok(()) => {
-                                match cp_stream(&mut handle, grpc_rx).await {
-                                    Ok(()) => trace!("CP disconnected"),
-                                    Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                                trace!("connected to gRPC CP");
+
+                                // Now register the stub with the CP
+                                match cp_register().await {
+                                    Ok(()) => {
+                                        match cp_stream(&mut handle, grpc_rx).await {
+                                            Ok(()) => trace!("CP disconnected"),
+                                            Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                                        }
+                                        continue
+                                    },
+                                    Err(e) => return Err(e),
                                 }
-                                continue
                             },
-                            Err(e) => return Err(e),
+                            Err(e) => {
+                                trace!("Unable to connect to control-plane - error {}", e.to_string());
+                                time::sleep(time::Duration::from_secs(1)).await;
+                            },
                         }
-                    },
-                    Err(e) => {
-                        trace!("Unable to connect to control-plane - error {}", e.to_string());
-                        time::sleep(time::Duration::from_secs(1)).await;
-                    },
-                }
+                    }
+                },
+                _ => return Err(Error::new(ErrorKind::AlreadyExists, "Hashmap handle already set")),
             }
         },
-        _ => return Err(Error::new(ErrorKind::AlreadyExists, "Hashmap OnceCell already set")),
+        _ => return Err(Error::new(ErrorKind::AlreadyExists, "PodID already set")),
     }
 }
