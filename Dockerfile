@@ -2,11 +2,16 @@
 ####################################################################################################
 ## Builder
 ####################################################################################################
-FROM devhub-docker.cisco.com/docker.io/rust:latest AS builder
-
-RUN rustup default beta && rustup toolchain install beta --component rustfmt,rust-std,clippy && rustup update
+FROM rust:latest AS builder
 
 RUN update-ca-certificates
+
+RUN apt clean
+RUN apt update
+
+RUN apt-get -y install protobuf-compiler
+
+RUN rustup update
 
 WORKDIR /msm-rtsp-stub
 
