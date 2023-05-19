@@ -17,6 +17,11 @@ jobs:
             toolchain: beta
             components: rustfmt, rust-std, clippy
 
+      - name: Set up protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          version: '3.x'
+
       - name: Checkout code
         uses: actions/checkout@v3
 
