@@ -17,19 +17,17 @@
 use msm_rtsp_stub::client::client_listener;
 use msm_rtsp_stub::cp::cp_connector;
 
-use futures::future::join_all;
 use http::Uri;
-use log::{debug, info, error};
+use log::{trace, debug, info, error};
 use std::str::FromStr;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use simple_logger;
 use envmnt;
 
-#[tokio::main (flavor="current_thread")]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = CancellationToken::new();
-    let mut sigterm = signal(SignalKind::terminate())?;
 
     // We prefer to use MSM_LOG_LVL rather than RUST_LOG
     envmnt::set("RUST_LOG", envmnt::get_or("MSM_LOG_LVL", "WARN"));
@@ -40,15 +38,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     
             match Uri::from_str(&envmnt::get_or("MSM_CONTROL_PLANE", "http://127.0.0.1:9000")) {
                 Ok(control_plane) => {
-                    let mut handles = vec![];
                     // spawn a task for the client communication
                     let listener_token = token.clone();
-                    handles.push(tokio::spawn(async move {
+                    tokio::spawn(async move {
                         match client_listener(format!(":::{}", rtsp_port).to_string(), listener_token).await {
-                            Ok(()) => info!("Disconnected!"),
+                            Ok(()) => info!("Client listener terminated!"),
                             Err(e) => error!("Error: {}", e),
                         }
-                    }));
+                    });
                     
                     // create the identity string for the client
                     let node_name = envmnt::get_or("MSM_NODE_NAME", "node");
@@ -59,21 +56,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // spawn a task for the CP communication
                     let connector_token = token.clone();
-                    handles.push(tokio::spawn(async move {
+                    tokio::spawn(async move {
                         match cp_connector(control_plane, identity_string, connector_token).await {
-                            Ok(()) => info!("Disconnected!"),
+                            Ok(()) => info!("CP terminated!"),
                             Err(e) => error!("Error: {}", e),
                         }
-                    }));
-                    
-                    // wait for both green threads to finish (not gonna happen) or sigterm
-                    tokio::select! {
-                        _ = join_all(handles) => {
-                            info!("handles joined");
-                        }
-                        _ = sigterm.recv() => {
-                            info!("terminated!");
-                        }
+                    });
+
+                    trace!("about to create signal");
+
+                    match signal(SignalKind::terminate()) {
+                        Ok(mut sigterm) => {
+                            trace!("main thread waiting...");
+
+                            // wait for sigterm
+                            sigterm.recv().await;
+
+                            // kill all tasks
+                            info!("cancelling all tasks");
+                            token.cancel();
+                        },
+                        Err(e) => error!("Error: {}:", e), 
                     }
                 }
                 Err(e) => {
@@ -85,9 +88,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             error!("unable to log: {}", e.to_string());
         }
     }
-
-    // kill all tasks
-    token.cancel();
 
     Ok(())
 }
