@@ -394,7 +394,7 @@ pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: Cancella
                                 info!("hashmap task finished");
                             }
                             _ = hashmap_token.cancelled() => {
-                                info!("hashmap task killed");
+                                info!("hashmap task cancelled");
                             }
                         }
                     });
@@ -425,7 +425,7 @@ pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: Cancella
                                                 }
                                             }
                                             _ = cancellation_token.cancelled() => {
-                                                info!("CP task killed");
+                                                info!("CP task cancelled");
                                             }
                                         }
                                     },
