@@ -25,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 use simple_logger;
 use envmnt;
 
-#[tokio::main]
+#[tokio::main (flavor="current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = CancellationToken::new();
 
