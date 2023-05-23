@@ -417,11 +417,17 @@ pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: Cancella
                                 match cp_register().await {
                                     Ok(()) => {
                                         let stream_token = cancellation_token.clone();
-                                        match cp_stream(&mut handle, grpc_rx, stream_token).await {
-                                            Ok(()) => trace!("CP disconnected"),
-                                            Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                                        tokio::select! {
+                                            result = cp_stream(&mut handle, grpc_rx, stream_token) => {
+                                                match result {
+                                                    Ok(()) => trace!("CP disconnected"),
+                                                    Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                                                }
+                                            }
+                                            _ = cancellation_token.cancelled() => {
+                                                info!("CP task killed");
+                                            }
                                         }
-                                        continue
                                     },
                                     Err(e) => return Err(e),
                                 }

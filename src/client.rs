@@ -172,7 +172,7 @@ async fn client_writer(mut rx: mpsc::Receiver<Vec<u8>>, writer: OwnedWriteHalf) 
 }
 
 /// handle client connection
-async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream, _cancellation_token: CancellationToken) -> Result<()> {
+async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream, cancellation_token: CancellationToken) -> Result<()> {
 
     trace!("client handler for {} {}", local_addr, remote_addr);
 
@@ -226,19 +226,26 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                     }));
 
                     // now read messages from client until it finishes
-                    match client_reader(local_addr.clone(), remote_addr.clone(), &reader).await {
-                        Ok(bytes_read) => debug!("read {} bytes from client", bytes_read),
-                        Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+                    tokio::select! {
+                        result = client_reader(local_addr.clone(), remote_addr.clone(), &reader) => {
+                            match result {
+                                Ok(bytes_read) => debug!("read {} bytes from client", bytes_read),
+                                Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+                            }
+                        }
+                        _ = cancellation_token.cancelled() => {
+                            info!("client task cancelled");
+                        }
                     }
 
-                    trace!("waiting for threads to finish");
+                    trace!("waiting for tasks to finish");
 
-                    // now kill the threads
+                    // now kill the tasks
                     for handle in &handles {
                         handle.abort();
                     }
 
-                    trace!("threads all finished");
+                    trace!("tasks all finished");
                 
                     // Tell CP thread to delete client from CP and from hashmap
                     match cp_delete(local_addr.clone(), remote_addr.clone()).await {
@@ -274,7 +281,7 @@ pub async fn client_outbound(remote_addr: String, cancellation_token: Cancellati
                                 }
                             }
                             _ = cancellation_token.cancelled() => {
-                                info!("outbound client task killed");
+                                info!("outbound client task cancelled");
                             }
                         }
                     });
