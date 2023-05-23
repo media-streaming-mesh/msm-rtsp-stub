@@ -23,13 +23,14 @@ use crate::dp::dp_rtcp_recv;
 
 use bytes::BytesMut;
 
-use log::{debug, error, info, trace, warn};
+use log::{trace, debug, info, warn, error};
 
 use std::io::{Error, ErrorKind, Result};
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 const CLIENT_CHANNEL_SIZE: usize = 5;
 
@@ -171,7 +172,7 @@ async fn client_writer(mut rx: mpsc::Receiver<Vec<u8>>, writer: OwnedWriteHalf) 
 }
 
 /// handle client connection
-async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream) -> Result<()> {
+async fn client_handler(local_addr: String, remote_addr: String, client_stream: TcpStream, cancellation_token: CancellationToken) -> Result<()> {
 
     trace!("client handler for {} {}", local_addr, remote_addr);
 
@@ -225,19 +226,26 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
                     }));
 
                     // now read messages from client until it finishes
-                    match client_reader(local_addr.clone(), remote_addr.clone(), &reader).await {
-                        Ok(bytes_read) => debug!("read {} bytes from client", bytes_read),
-                        Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+                    tokio::select! {
+                        result = client_reader(local_addr.clone(), remote_addr.clone(), &reader) => {
+                            match result {
+                                Ok(bytes_read) => debug!("read {} bytes from client", bytes_read),
+                                Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.to_string())),
+                            }
+                        }
+                        _ = cancellation_token.cancelled() => {
+                            info!("client task cancelled");
+                        }
                     }
 
-                    trace!("waiting for threads to finish");
+                    trace!("waiting for tasks to finish");
 
-                    // now kill the threads
+                    // now kill the tasks
                     for handle in &handles {
                         handle.abort();
                     }
 
-                    trace!("threads all finished");
+                    trace!("tasks all finished");
                 
                     // Tell CP thread to delete client from CP and from hashmap
                     match cp_delete(local_addr.clone(), remote_addr.clone()).await {
@@ -256,7 +264,7 @@ async fn client_handler(local_addr: String, remote_addr: String, client_stream: 
 }
 
 /// manage outbound client connection from beginning to end
-pub async fn client_outbound(remote_addr: String) -> Result<()> { 
+pub async fn client_outbound(remote_addr: String, cancellation_token: CancellationToken) -> Result<()> { 
     trace!("client_outbound for {}", remote_addr);
     match TcpStream::connect(remote_addr.clone()).await {
         Ok(client_stream) => {
@@ -265,9 +273,16 @@ pub async fn client_outbound(remote_addr: String) -> Result<()> {
                     let local_addr = address.to_string();
                     trace!("outbound connected from {}", local_addr);
                     tokio::spawn(async move {
-                        match client_handler(local_addr, remote_addr, client_stream).await {
-                            Ok(()) => debug!("Outbound client disconnected"),
-                            Err(e) => error!("Outbound client error: {}", e),
+                        tokio::select! {
+                            result = client_handler(local_addr, remote_addr, client_stream, cancellation_token.clone()) => {
+                                match result {
+                                    Ok(()) => debug!("Outbound client disconnected"),
+                                    Err(e) => error!("Outbound client error: {}", e),
+                                }
+                            }
+                            _ = cancellation_token.cancelled() => {
+                                info!("outbound client task cancelled");
+                            }
                         }
                     });
 
@@ -281,7 +296,7 @@ pub async fn client_outbound(remote_addr: String) -> Result<()> {
 }
 
 /// creat inbound client connection
-async fn client_inbound(client_stream: TcpStream) -> Result<()> {
+async fn client_inbound(client_stream: TcpStream, cancellation_token: CancellationToken) -> Result<()> {
     let local_addr: String;
     let remote_addr: String;
     
@@ -297,9 +312,16 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
 
     // handler will run as its own thread (per client)
     tokio::spawn(async move {
-        match client_handler(local_addr, remote_addr, client_stream).await {
-            Ok(()) => debug!("Inbound client disconnected"),
-            Err(e) => error!("Inbound client error: {}", e),
+        tokio::select! {
+            result = client_handler(local_addr, remote_addr, client_stream, cancellation_token.clone()) => {
+                match result {
+                    Ok(()) => debug!("Inbound client disconnected"),
+                    Err(e) => error!("Inbound client error: {}", e),
+                }
+            }
+            _ = cancellation_token.cancelled() => {
+                info!("inbound client task cancelled");
+            }
         }
     });
 
@@ -307,7 +329,7 @@ async fn client_inbound(client_stream: TcpStream) -> Result<()> {
 }
 
 /// Client listener
-pub async fn client_listener(socket: String) -> Result<()> {
+pub async fn client_listener(socket: String, cancellation_token: CancellationToken) -> Result<()> {
     match TcpListener::bind(socket).await {
         Ok(listener) => {
             debug!("Listening for connections");
@@ -318,7 +340,7 @@ pub async fn client_listener(socket: String) -> Result<()> {
                     Ok((stream, client)) => {
                         debug!("connected, client is {}", client.to_string());
 
-                        match client_inbound(stream).await {
+                        match client_inbound(stream, cancellation_token.clone()).await {
                             Ok(()) => debug!("Inbound client spawned"),
                             Err(e) => error!("Unable to spawn inbound client: {}", e),
                         }

@@ -22,7 +22,7 @@ use crate::client::client_outbound;
 use crate::dp::dp_init;
 
 use http::Uri;
-use log::{debug, trace, warn, error};
+use log::{trace, debug, info, warn, error};
 
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
 use self::msm_cp::{Event, Message};
@@ -35,6 +35,7 @@ use std::str::FromStr;
 
 use tokio::sync::{mpsc, Mutex};
 use tokio::time;
+use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 use tonic::Request;
 
@@ -250,9 +251,9 @@ async fn cp_access_hashmap(command: HashmapCommand, key: String, optional_channe
 }
 
 /// Add flow from CP
-async fn cp_add_flow(remote_addr: String) -> Result<()> {
+async fn cp_add_flow(remote_addr: String, cancellation_token: CancellationToken) -> Result<()> {
     trace!("CP add flow for {}", remote_addr);
-    match client_outbound(remote_addr.clone()).await {
+    match client_outbound(remote_addr.clone(), cancellation_token).await {
         // connected to client so add it to CP
         Ok(()) => return Ok(()),
         Err(e) => return Err(e),
@@ -271,7 +272,7 @@ async fn cp_data_rcvd(key: String, data: String) -> Result<()> {
 }
 
 /// Run bidirectional streaming RPC
-async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mpsc::Receiver<Message>) -> Result<()> {
+async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mpsc::Receiver<Message>, cancellation_token: CancellationToken) -> Result<()> {
 
     let requests = async_stream::stream! {
         loop {
@@ -330,7 +331,8 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                     },
                                     Some(Event::Request) => {
                                         trace!("Request to add from CP");
-                                        match cp_add_flow(message.remote).await {
+                                        let flow_token = cancellation_token.clone();
+                                        match cp_add_flow(message.remote, flow_token).await {
                                             Ok(()) => debug!("CP added flow"),
                                             Err(e) => return Err(e),
                                         }
@@ -374,7 +376,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 }
 
 /// CP connector
-pub async fn cp_connector(uri: Uri, pod_id: String) -> Result<()> {
+pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: CancellationToken) -> Result<()> {
 
     match POD_ID.set(pod_id) {
         Ok(()) => {
@@ -385,7 +387,17 @@ pub async fn cp_connector(uri: Uri, pod_id: String) -> Result<()> {
                 Ok(()) => {
 
                     // start the hash-map task
-                    tokio::spawn(async { cp_hashmap(hash_rx).await });
+                    let hashmap_token = cancellation_token.clone();
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = cp_hashmap(hash_rx) => {
+                                info!("hashmap task finished");
+                            }
+                            _ = hashmap_token.cancelled() => {
+                                info!("hashmap task cancelled");
+                            }
+                        }
+                    });
 
                     loop {
                         // create channel to receive messages from CP functions
@@ -404,11 +416,18 @@ pub async fn cp_connector(uri: Uri, pod_id: String) -> Result<()> {
                                 // Now register the stub with the CP
                                 match cp_register().await {
                                     Ok(()) => {
-                                        match cp_stream(&mut handle, grpc_rx).await {
-                                            Ok(()) => trace!("CP disconnected"),
-                                            Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                                        let stream_token = cancellation_token.clone();
+                                        tokio::select! {
+                                            result = cp_stream(&mut handle, grpc_rx, stream_token) => {
+                                                match result {
+                                                    Ok(()) => trace!("CP disconnected"),
+                                                    Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                                                }
+                                            }
+                                            _ = cancellation_token.cancelled() => {
+                                                info!("CP task cancelled");
+                                            }
                                         }
-                                        continue
                                     },
                                     Err(e) => return Err(e),
                                 }
