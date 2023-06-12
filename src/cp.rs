@@ -411,7 +411,7 @@ pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: Cancella
                         match MsmControlPlaneClient::connect(uri.clone()).await {
                             Ok(mut handle) => {
 
-                                trace!("connected to gRPC CP");
+                                debug!("connected to gRPC CP");
 
                                 // Now register the stub with the CP
                                 match cp_register().await {
@@ -420,7 +420,7 @@ pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: Cancella
                                         tokio::select! {
                                             result = cp_stream(&mut handle, grpc_rx, stream_token) => {
                                                 match result {
-                                                    Ok(()) => trace!("CP disconnected"),
+                                                    Ok(()) => debug!("CP disconnected"),
                                                     Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
                                                 }
                                             }
@@ -433,7 +433,7 @@ pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: Cancella
                                 }
                             },
                             Err(e) => {
-                                trace!("Unable to connect to control-plane - error {}", e.to_string());
+                                error!("Unable to connect to control-plane - error {}", e.to_string());
                                 time::sleep(time::Duration::from_secs(1)).await;
                             },
                         }
