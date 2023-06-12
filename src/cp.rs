@@ -21,7 +21,6 @@ pub mod msm_cp {
 use crate::client::client_outbound;
 use crate::dp::dp_init;
 
-use http::Uri;
 use log::{trace, debug, info, warn, error};
 
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
@@ -36,7 +35,7 @@ use std::str::FromStr;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
 
 use once_cell::sync::{Lazy, OnceCell};
@@ -376,7 +375,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 }
 
 /// CP connector
-pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: CancellationToken) -> Result<()> {
+pub async fn cp_connector(url: String, pod_id: String, cancellation_token: CancellationToken) -> Result<()> {
 
     match POD_ID.set(pod_id) {
         Ok(()) => {
@@ -408,34 +407,44 @@ pub async fn cp_connector(uri: Uri, pod_id: String, cancellation_token: Cancella
 
                         debug!("connecting to gRPC CP");
 
-                        match MsmControlPlaneClient::connect(uri.clone()).await {
-                            Ok(mut handle) => {
-
-                                debug!("connected to gRPC CP");
-
-                                // Now register the stub with the CP
-                                match cp_register().await {
-                                    Ok(()) => {
-                                        let stream_token = cancellation_token.clone();
-                                        tokio::select! {
-                                            result = cp_stream(&mut handle, grpc_rx, stream_token) => {
-                                                match result {
-                                                    Ok(()) => debug!("CP disconnected"),
-                                                    Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                        let _tls = ClientTlsConfig::new();
+                        let uri = url.clone();
+                        match Channel::from_shared(uri.into_bytes()) {
+                            Ok(endpoint) => {
+                                match endpoint.connect().await {
+                                    Ok(channel) => {
+                                        let mut handle = MsmControlPlaneClient::new(channel);
+        
+                                        debug!("connected to gRPC CP");
+        
+                                        // Now register the stub with the CP
+                                        match cp_register().await {
+                                            Ok(()) => {
+                                                let stream_token = cancellation_token.clone();
+                                                tokio::select! {
+                                                    result = cp_stream(&mut handle, grpc_rx, stream_token) => {
+                                                        match result {
+                                                            Ok(()) => debug!("CP disconnected"),
+                                                            Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
+                                                        }
+                                                    }
+                                                    _ = cancellation_token.cancelled() => {
+                                                        info!("CP task cancelled");
+                                                    }
                                                 }
-                                            }
-                                            _ = cancellation_token.cancelled() => {
-                                                info!("CP task cancelled");
-                                            }
+                                            },
+                                            Err(e) => return Err(e),
                                         }
+        
                                     },
-                                    Err(e) => return Err(e),
+                                    Err(e) => {
+                                        error!("Unable to connect to control-plane - error {}", e.to_string());
+                                        time::sleep(time::Duration::from_secs(1)).await;
+                                    },
+
                                 }
                             },
-                            Err(e) => {
-                                error!("Unable to connect to control-plane - error {}", e.to_string());
-                                time::sleep(time::Duration::from_secs(1)).await;
-                            },
+                            Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
                         }
                     }
                 },
