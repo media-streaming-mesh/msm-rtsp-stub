@@ -11,10 +11,10 @@ RUN apt update
 
 RUN apt-get -y install protobuf-compiler build-essential
 
-RUN rustup update
-
+ARG BUILDARCH
 ARG TARGETARCH
 
+RUN rustup update
 RUN rustup target add aarch64-unknown-linux-gnu
 RUN rustup target add x86_64-unknown-linux-gnu
 RUN rustup toolchain add stable-aarch64-unknown-linux-gnu
