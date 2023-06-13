@@ -408,8 +408,8 @@ pub async fn cp_connector(url: String, pod_id: String, cancellation_token: Cance
                         debug!("connecting to gRPC CP");
 
                         let _tls = ClientTlsConfig::new();
-                        let uri = url.clone();
-                        match Channel::from_shared(uri.into_bytes()) {
+
+                        match Channel::from_shared(url.clone().into_bytes()) {
                             Ok(endpoint) => {
                                 match endpoint.connect().await {
                                     Ok(channel) => {
