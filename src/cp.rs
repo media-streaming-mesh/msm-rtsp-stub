@@ -35,7 +35,7 @@ use std::str::FromStr;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
-use tonic::transport::{Channel, ClientTlsConfig};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 use tonic::Request;
 
 use once_cell::sync::{Lazy, OnceCell};
@@ -375,18 +375,32 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
 }
 
 /// CP connector
-pub async fn cp_connector(url: String, pod_id: String, cancellation_token: CancellationToken) -> Result<()> {
+pub async fn cp_connector(cert_option: Option<Certificate>, url: String, pod_id: String, connector_token: CancellationToken) -> Result<()> {
 
+    let mut tls_option: Option<ClientTlsConfig> = None;
+
+    // set up the TLS config if needed
+    match cert_option {
+        Some(cert) => {
+            trace!("TLS required");
+            tls_option = Some(ClientTlsConfig::new().ca_certificate(cert));
+        },
+        None => trace!("no TLS required"),
+    }
+
+    // try to store the POD_ID (will be used elswhere so is scoped to this module)
     match POD_ID.set(pod_id) {
         Ok(()) => {
+
             // create channel to access hash-map entries
             let (hash_tx, hash_rx) = mpsc::channel::<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>(HASH_CHANNEL_SIZE);
 
+            // try to create handle to send to the hash-map task (will be used elsewhere so is scoped to this module)
             match HASH_TX.set(hash_tx) {
                 Ok(()) => {
 
                     // start the hash-map task
-                    let hashmap_token = cancellation_token.clone();
+                    let hashmap_token = connector_token.clone();
                     tokio::spawn(async move {
                         tokio::select! {
                             _ = cp_hashmap(hash_rx) => {
@@ -411,53 +425,48 @@ pub async fn cp_connector(url: String, pod_id: String, cancellation_token: Cance
                             Ok(mut endpoint) => {
                                 trace!("endpoint is {}", endpoint.uri());
 
-                                if url.starts_with("http") {
-                                    trace!("correct-ish URL");
-
-                                    if url.starts_with("https") {
-                                        trace!("TLS required");
-                                        let tls = ClientTlsConfig::new();
-                                        match endpoint.tls_config(tls) {
+                                match tls_option.clone() {
+                                    Some(tls_config) => {
+                                        match endpoint.tls_config(tls_config) {
                                             Ok (endpoint_tls) => {
                                                 endpoint = endpoint_tls;
                                             },
                                             Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))
                                         }
-                                    }
+                                    },
+                                    None => {},
+                                }
 
-                                    match endpoint.connect().await {
-                                        Ok(channel) => {
-                                            let mut handle = MsmControlPlaneClient::new(channel);
-            
-                                            debug!("connected to gRPC CP");
-            
-                                            // Now register the stub with the CP
-                                            match cp_register().await {
-                                                Ok(()) => {
-                                                    let stream_token = cancellation_token.clone();
-                                                    tokio::select! {
-                                                        result = cp_stream(&mut handle, grpc_rx, stream_token) => {
-                                                            match result {
-                                                                Ok(()) => debug!("CP disconnected"),
-                                                                Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
-                                                            }
-                                                        }
-                                                        _ = cancellation_token.cancelled() => {
-                                                            info!("CP task cancelled");
+                                match endpoint.connect().await {
+                                    Ok(channel) => {
+                                        let mut handle = MsmControlPlaneClient::new(channel);
+        
+                                        debug!("connected to gRPC CP");
+        
+                                        // Now register the stub with the CP
+                                        match cp_register().await {
+                                            Ok(()) => {
+                                                let stream_token = connector_token.clone();
+                                                tokio::select! {
+                                                    result = cp_stream(&mut handle, grpc_rx, stream_token) => {
+                                                        match result {
+                                                            Ok(()) => debug!("CP disconnected"),
+                                                            Err(e) => warn!("CP disconnected due to error {}", e.to_string()),
                                                         }
                                                     }
-                                                },
-                                                Err(e) => return Err(e),
-                                            }
-            
-                                        },
-                                        Err(e) => {
-                                            warn!("Unable to connect to control-plane - error {}", e.to_string());
-                                            time::sleep(time::Duration::from_secs(1)).await;
-                                        },
-                                    }
-                                } else {
-                                    return Err(Error::new(ErrorKind::InvalidData, "CP URL doesn't start with http"))
+                                                    _ = connector_token.cancelled() => {
+                                                        info!("CP task cancelled");
+                                                    }
+                                                }
+                                            },
+                                            Err(e) => return Err(e),
+                                        }
+        
+                                    },
+                                    Err(e) => {
+                                        warn!("Unable to connect to control-plane - error {}", e.to_string());
+                                        time::sleep(time::Duration::from_secs(1)).await;
+                                    },
                                 }
                             },
                             Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),

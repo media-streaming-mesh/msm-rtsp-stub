@@ -20,11 +20,19 @@ use msm_rtsp_stub::cp::cp_connector;
 use log::{trace, debug, info, error};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
+use tonic::transport::Certificate;
+
 use simple_logger;
 use envmnt;
 
 #[tokio::main (flavor="current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cert_option: Option<Certificate> = None;
+    match std::fs::read_to_string("/tmp/ca.pem") {
+        Ok(pem) => cert_option = Some(Certificate::from_pem(pem)),
+        Err(e) => info!("unable to read certificate PEM {}", e.to_string()),
+    }
+    
     let token = CancellationToken::new();
 
     // We prefer to use MSM_LOG_LVL rather than RUST_LOG
@@ -49,13 +57,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let node_name = envmnt::get_or("MSM_NODE_NAME", "node");
             let namespace = envmnt::get_or("MSM_POD_NAMESPACE", "namespace");
             let pod_name = envmnt::get_or("MSM_POD_NAME", "pod");
-            let identity_string = [node_name, namespace, pod_name].join(":");
-            debug!("identity string is {}", identity_string);
+            let pod_id = [node_name, namespace, pod_name].join(":");
+            debug!("identity string is {}", pod_id);
 
             // spawn a task for the CP communication
             let connector_token = token.clone();
             tokio::spawn(async move {
-                match cp_connector(url, identity_string, connector_token).await {
+                match cp_connector(cert_option, url, pod_id, connector_token).await {
                     Ok(()) => info!("CP terminated!"),
                     Err(e) => error!("Error: {}", e),
                 }
