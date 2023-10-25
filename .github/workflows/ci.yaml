@@ -18,7 +18,7 @@ jobs:
             components: rustfmt, rust-std, clippy
 
       - name: Set up protoc
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@v2
         with:
           version: '3.x'
 
