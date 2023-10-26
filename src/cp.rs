@@ -302,12 +302,12 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                         match option {
                             Some(message) => {
                                 trace!("Message {} received from CP", message.event);
-                                match Event::from_i32(message.event) {
-                                    Some(Event::Register) => {
+                                match Event::try_from(message.event) {
+                                    Ok(Event::Register) => {
                                         error!("register from CP!");
                                         return Err(Error::new(ErrorKind::InvalidInput, "Invalid register message from CP"));
                                     },
-                                    Some(Event::Config) => {
+                                    Ok(Event::Config) => {
                                         match SocketAddr::from_str(&message.remote) {
                                             Ok(socket_addr) => {
                                                 match DP_INIT.get() {
@@ -329,7 +329,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                             Err(e) => error!("Unable to parse CP config: {}", e),
                                         }
                                     },
-                                    Some(Event::Request) => {
+                                    Ok(Event::Request) => {
                                         trace!("Request to add from CP");
                                         let flow_token = cancellation_token.clone();
                                         match cp_add_flow(message.remote, flow_token).await {
@@ -337,25 +337,25 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                             Err(e) => return Err(e),
                                         }
                                     },
-                                    Some(Event::Add) => {
+                                    Ok(Event::Add) => {
                                         trace!("add from CP!");
                                         return Err(Error::new(ErrorKind::InvalidInput, "Invalid add message from CP"));
                                     },
-                                    Some(Event::Delete) => {
+                                    Ok(Event::Delete) => {
                                         trace!("delete from CP");
                                         match cp_del_flow(format!("{}{}", message.local, message.remote)).await {
                                             Ok(()) => debug!("CP deleted flow"),
                                             Err(e) => return Err(e),
                                         }
                                     },
-                                    Some(Event::Data) => {
+                                    Ok(Event::Data) => {
                                         trace!("data from CP");
                                         match cp_data_rcvd(format!("{} {}", message.local, message.remote), message.data).await {
                                             Ok(()) => debug!("data received from CP"),
                                             Err(e) => return Err(e),
                                         }
                                     },
-                                    None => return Err(Error::new(ErrorKind::InvalidInput, "Invalid event value")),
+                                    Err(e) => return Err(e.into()),
                                 }
                             },
                             None => {
