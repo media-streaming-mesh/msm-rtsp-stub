@@ -15,10 +15,8 @@ RUN rustup update
 
 ARG TARGETARCH
 
-RUN rustup target add aarch64-unknown-linux-gnu
-RUN rustup target add x86_64-unknown-linux-gnu
-RUN rustup toolchain add stable-aarch64-unknown-linux-gnu
-RUN rustup toolchain add stable-x86_64-unknown-linux-gnu
+RUN if [ "$TARGETARCH" = "arm64" ]; then rustup target add aarch64-unknown-linux-gnu && rustup toolchain add stable-aarch64-unknown-linux-gnu; fi;
+RUN if [ "$TARGETARCH" = "amd64" ]; then rustup target add x86_64-unknown-linux-gnu && rustup toolchain add stable-x86_64-unknown-linux-gnu; fi;
 
 RUN if [ "$BUILDARCH" != "$TARGETARCH" ]; then \
       if [ "$TARGETARCH" = "arm64" ]; then apt-get -y install crossbuild-essential-arm64; fi; \
