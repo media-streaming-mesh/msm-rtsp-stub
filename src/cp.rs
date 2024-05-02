@@ -21,7 +21,6 @@ pub mod msm_cp {
 use crate::client::client_outbound;
 use crate::dp::dp_init;
 
-use http::Uri;
 use log::{trace, debug, info, warn, error};
 
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
@@ -37,6 +36,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
+use tonic::transport::Uri;
 use tonic::Request;
 
 use once_cell::sync::{Lazy, OnceCell};
