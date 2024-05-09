@@ -3,8 +3,8 @@ members = ["."]
 
 [package]
 name = "msm_rtsp_stub"
-version = "0.0.1-dev"
-authors = ["Giles Heron <giheron@cisco.com>"]
+version = "0.0.2-dev"
+authors = ["Giles Heron <giles@4mc.partners>"]
 description = "RTSP Sidecar Stub Proxy written in Rust"
 homepage = "https://github.com/media-streaming-mesh/msm-rtsp-stub"
 repository = "https://github.com/media-streaming-mesh/msm-rtsp-stub"
