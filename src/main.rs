@@ -17,11 +17,11 @@
 use msm_rtsp_stub::client::client_listener;
 use msm_rtsp_stub::cp::cp_connector;
 
-use http::Uri;
 use log::{trace, debug, info, error};
 use std::str::FromStr;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
+use tonic::transport::Uri;
 use simple_logger;
 use envmnt;
 

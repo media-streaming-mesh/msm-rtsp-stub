@@ -3,8 +3,8 @@ members = ["."]
 
 [package]
 name = "msm_rtsp_stub"
-version = "0.0.1-dev"
-authors = ["Giles Heron <giheron@cisco.com>"]
+version = "0.0.2-dev"
+authors = ["Giles Heron <giles@4mc.partners>"]
 description = "RTSP Sidecar Stub Proxy written in Rust"
 homepage = "https://github.com/media-streaming-mesh/msm-rtsp-stub"
 repository = "https://github.com/media-streaming-mesh/msm-rtsp-stub"
@@ -23,18 +23,17 @@ async-stream = "0.3.3"
 bytes = "1.3.0" 
 clap = { version = "4.2.7", features = ["derive"] }
 futures = "0.3.21"
-http = "0.2.6"
-h2 = "0.4"
+h2 = "0.4.4"
 log = "0.4.16"
 once_cell = "1.10.0" 
-prost = "0.12.1"
-simple_logger = "5.0.0"
-tokio = { version = "1.28.1", features = ["macros", "rt", "signal"] }
-tokio-util = "0.7.8" 
+prost = "0.12.4"
+simple_logger = "4.1.0"
+tokio = { version = "1.37.0", features = ["macros", "rt", "signal"] }
+tokio-util = "0.7.10" 
 tonic = "0.11.0"
 void = "1.0.2"
 envmnt = "*"
 
 [build-dependencies]
 tonic-build = { version = "0.11.0", default_features = false, features = ["transport", "prost"] }
-prost-build = "0.12.0"
+prost-build = "0.12.4"
