@@ -18,6 +18,7 @@ use msm_rtsp_stub::client::client_listener;
 use msm_rtsp_stub::cp::cp_connector;
 
 use log::{trace, debug, info, error};
+use std::error::Error;
 use std::str::FromStr;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
@@ -26,7 +27,7 @@ use simple_logger;
 use envmnt;
 
 #[tokio::main (flavor="current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     let token = CancellationToken::new();
 
     // We prefer to use MSM_LOG_LVL rather than RUST_LOG
@@ -76,17 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             info!("cancelling all tasks");
                             token.cancel();
                         },
-                        Err(e) => error!("Error: {}:", e), 
+                        Err(e) => Err(Box::new(format("Failed to create signal: {}", e.to_string()))),
                     }
                 }
-                Err(e) => {
-                    error!("unable to parse control plane URI {}", e.to_string());
-                }
+                Err(e) => Err(Box::new(format("Unable to parse control plane URI {}", e.to_string()))),
             }
         },
-        Err(e) => {
-            error!("unable to log: {}", e.to_string());
-        }
+        Err(e) => Err((Box::new(format("Unable to initialize logger: {}", e.to_string())))),
     }
 
     Ok(())
