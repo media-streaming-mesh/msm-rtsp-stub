@@ -23,6 +23,8 @@ use crate::dp::dp_init;
 
 use log::{trace, debug, info, warn, error};
 
+use prost::UnknownEnumValue;
+
 use self::msm_cp::msm_control_plane_client::MsmControlPlaneClient;
 use self::msm_cp::{Event, Message};
 
@@ -355,7 +357,7 @@ async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mps
                                             Err(e) => return Err(e),
                                         }
                                     },
-                                    Err(e) => return Err(e.into()),
+                                    Err(UnknownEnumValue(e)) => return Err(Error::new(ErrorKind::Other, e.to_string())),
                                 }
                             },
                             None => {
