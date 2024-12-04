@@ -18,6 +18,8 @@ pub mod msm_cp {
     tonic::include_proto!("msm_cp");
 }
 
+use async_stream::stream;
+
 use crate::client::client_outbound;
 use crate::dp::dp_init;
 
@@ -49,6 +51,7 @@ use once_cell::sync::{Lazy, OnceCell};
 static GRPC_TX: Lazy<Mutex<Option<mpsc::Sender<Message>>>> = Lazy::new(|| Mutex::new(None));
 
 // global immutable handle to channel that sends to hashmap thread
+// will be created once and shared by all users of the hashmap
 static HASH_TX: OnceCell<mpsc::Sender<(HashmapCommand, String, Option<mpsc::Sender<Vec<u8>>>, Option<String>)>> = OnceCell::new();
 
 // global immutable flag to indicate that DP is initialised
@@ -268,7 +271,7 @@ async fn cp_data_rcvd(key: String, data: String) -> Result<()> {
 /// Run bidirectional streaming RPC
 async fn cp_stream(handle: &mut MsmControlPlaneClient<Channel>, mut grpc_rx: mpsc::Receiver<Message>, cancellation_token: CancellationToken) -> Result<()> {
 
-    let requests = async_stream::stream! {
+    let requests = stream! {
         loop {
             trace!("awaiting request for CP");
             match grpc_rx.recv().await {
