@@ -107,6 +107,8 @@ RUN case ${TARGETARCH} in \
 # Copy the source code
 COPY . /msm-rtsp-stub
 
+RUN cargo update
+
 # Build application - this is the caching Docker layer!
 RUN case ${TARGETARCH} in \
         arm64) PKG_CONFIG_SYSROOT_DIR=/ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc cargo build --target=aarch64-unknown-linux-gnu --release ;; \
