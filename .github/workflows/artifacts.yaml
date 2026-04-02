@@ -26,7 +26,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            ciscolabs/msm-rtsp-stub
+            ${{ secrets.DOCKERHUB_USERNAME }}/msm-rtsp-stub
           flavor: |
             latest = false
           tags: |
