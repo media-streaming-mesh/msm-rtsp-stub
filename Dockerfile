@@ -76,23 +76,21 @@ RUN apt-get -y install protobuf-compiler
 RUN if [ "$BUILDARCH" != "$TARGETARCH" ]; then \
         if [ "$TARGETARCH" = "arm64" ]; then \
             dpkg --add-architecture arm64 \
-            && apt-get update \ 
+            && apt-get update \
             && apt-get install -y \
             g++-aarch64-linux-gnu \
             libc6-dev-arm64-cross \
             libssl-dev:arm64 \
             && rustup target add aarch64-unknown-linux-gnu \
-            && rustup toolchain install stable-aarch64-unknown-linux-gnu \
             && rm -rf /var/lib/apt/lists/*; \
         elif [ "$TARGETARCH" = "amd64" ]; then \
             dpkg --add-architecture amd64 \
-            && apt-get update \ 
+            && apt-get update \
             && apt-get install -y \
             g++-x86-64-linux-gnu \
             libc6-dev-amd64-cross \
             libssl-dev:amd64 \
             && rustup target add x86_64-unknown-linux-gnu \
-            && rustup toolchain install stable-x86_64-unknown-linux-gnu \
             && rm -rf /var/lib/apt/lists/*; \
         fi \
     fi
