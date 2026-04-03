@@ -21,7 +21,7 @@ lto = true
 async-recursion = "1.1.1"
 async-stream = "0.3.6"
 bytes = "1.8.0"
-clap = { version = "=4.5.40", features = ["derive"] }
+clap = { version = "=4.6.0", features = ["derive"] }
 futures = "0.3.31"
 h2 = "0.4.7"
 log = "0.4.25"
